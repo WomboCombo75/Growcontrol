@@ -27,7 +27,7 @@ No cloud account is required for core operation: data stays on your machine and 
 
 ---
 
-## Install (Pi-hole style, one command)
+## Install 
 
 Run as your normal login user (example **`pi`**), **not** a root-only SSH session:
 
@@ -175,18 +175,10 @@ sudo nginx -t
 
 ---
 
-## Upgrading from older `/weed/` docroot
-
-If you previously used **`/var/www/html/weed`**, set **`output_dir`** to **`/var/www/html/growcontrol`**, run **`./deploy_web.sh`**, move any **`status.json` / `weatherdata` / `Sensor_*`** you care about into the new folder, then remove the old **`weed`** directory. Use URLs under **`/growcontrol/`**.
-
----
-
 ## Security note
 
 Treat the Pi and your LAN as the trust boundary. The default API is bound to **localhost** and reached through nginx; restrict access at the network layer if exposing the Pi beyond your home.
 
 ---
 
-## License
 
-Add your preferred **LICENSE** file in the repository root if you distribute this project publicly.
