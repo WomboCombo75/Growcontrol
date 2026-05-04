@@ -53,21 +53,12 @@ When it finishes, open:
 |----------|---------|
 | `GROWCONTROL_DIR` | Install path (default: `$HOME/Growcontrol`). |
 | `GROWCONTROL_BRANCH` | Git branch (default: `main`). |
-| `GROWCONTROL_REPO` | Git URL (default: this project’s GitHub HTTPS URL). |
+| `GROWCONTROL_REPO` | Git clone URL (default: this repo). Only change this if you install from **your own fork** on GitHub. |
 | `GROWCONTROL_SKIP_SYSTEM` | Set to `1` to only clone/update and **not** run apt/systemd (for developers). |
 
-Example: install from a **fork**:
+### If you prefer `git clone` first
 
-```bash
-export GROWCONTROL_REPO="https://github.com/<you>/Growcontrol.git"
-curl -sSL https://raw.githubusercontent.com/<you>/Growcontrol/main/install.sh | bash
-```
-
-Until **`install.sh`** exists on the branch you reference, the `raw.githubusercontent.com` one-liner will fail—use the **manual** path below, or from a clone directory run **`./install.sh`** (same logic as `curl | bash`).
-
-Until your changes are **pushed to GitHub**, the public `curl` URL will not serve your latest `install.sh`; use **manual install** or **`./install.sh`** from a local clone.
-
-### Manual install (clone + installer)
+Same result as the one-liner:
 
 ```bash
 git clone https://github.com/WomboCombo75/Growcontrol.git
@@ -75,7 +66,7 @@ cd Growcontrol
 ./install_phase1.sh
 ```
 
-Same end state as the one-liner.
+(You can also run **`./install.sh`** from that directory: it updates the clone and then runs the full installer.)
 
 ---
 
