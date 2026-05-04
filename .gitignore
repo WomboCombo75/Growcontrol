@@ -1,0 +1,22 @@
+# Runtime and local environment
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Local runtime artifacts
+logs/
+data/
+
+# Machine-specific config (never commit MACs, API keys, or coordinates from a live Pi)
+config/settings.json
+config/sensors.json
+
+# Vendored webcam stack (clone separately; see legacy/README-mjpg-streamer.txt)
+legacy/mjpg-streamer/
+
+# Keep runtime output out of git unless intentionally tracked (same names as on the Pi docroot)
+web/status.json
+web/weatherdata
+web/Sensor_*

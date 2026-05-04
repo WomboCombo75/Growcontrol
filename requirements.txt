@@ -1,0 +1,6 @@
+requests
+miflora
+bluepy
+pygatt
+btlewrap
+pexpect

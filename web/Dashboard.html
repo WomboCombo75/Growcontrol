@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Growcontrol Dashboard</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <style>
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      background: radial-gradient(1200px 600px at 20% 0%, #eaf2ff 0%, #f4f6f8 55%, #f4f6f8 100%);
+      color: #0f172a;
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 18px; display: grid; gap: 16px; }
+    .card { background: rgba(255,255,255,0.92); border: 1px solid #d0d7de; border-radius: 12px; padding: 16px; backdrop-filter: blur(4px); }
+    .topbar {
+      display:flex; justify-content:space-between; align-items:center; gap:12px;
+      background: linear-gradient(90deg, rgba(9,105,218,0.10), rgba(130,80,223,0.10));
+    }
+    .topbar a {
+      text-decoration:none; border:1px solid #d0d7de; padding:8px 12px; border-radius:10px;
+      color:#0f172a; background:#fff;
+    }
+    h2 { margin: 0 0 10px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; border-bottom: 1px solid #d8dee4; padding: 8px; font-size: 14px; }
+    .status-pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700; text-transform:uppercase; }
+    .status-ok { background:#dafbe1; color:#116329; }
+    .status-error { background:#ffebe9; color:#b42318; }
+    .status-unknown { background:#f6f8fa; color:#57606a; }
+    .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .controls { display:grid; gap:10px; max-width:560px; }
+    canvas { max-height: 260px; }
+    .empty { color:#57606a; font-style:italic; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .chip { border:1px solid #d0d7de; background:#fff; padding:6px 10px; border-radius:999px; cursor:pointer; font-size:13px; }
+    .chip.active { border-color:#0969da; color:#0969da; font-weight:700; }
+    input, select { border:1px solid #d0d7de; border-radius:8px; padding:8px; }
+    .pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700; text-transform:uppercase; border:1px solid #d0d7de; }
+    .pill.ok { background:#dafbe1; color:#116329; border-color:#b4f1c0; }
+    .pill.warn { background:#fff8c5; color:#7d4e00; border-color:#f5e3a5; }
+    .pill.err { background:#ffebe9; color:#b42318; border-color:#ffd1cc; }
+    .pill.neutral { background:#f6f8fa; color:#57606a; }
+    .btn { border:1px solid #d0d7de; background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; }
+    .btn.primary { background:#0969da; color:#fff; border-color:#0969da; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .analytics-grid { display:grid; grid-template-columns: 1fr; gap: 14px; }
+    .tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .tile { background: rgba(255,255,255,0.92); border:1px solid #d0d7de; border-radius:14px; padding:12px; }
+    .tile .name { font-weight: 900; letter-spacing: 0.2px; }
+    .metric { display:flex; justify-content:space-between; gap:10px; padding:6px 0; border-bottom: 1px solid #eef2f6; font-size: 13px; }
+    .metric:last-child { border-bottom: none; }
+    .bar { height: 8px; background:#eef2f6; border-radius:999px; overflow:hidden; width: 100%; }
+    .bar > div { height:100%; background:#0969da; width:0%; }
+    .muted-link { color:#57606a; text-decoration:none; }
+    .muted-link:hover { text-decoration:underline; }
+    @media (max-width: 780px) {
+      .container { padding: 12px; }
+      canvas { max-height: 220px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card topbar">
+      <div>
+        <div style="font-weight:900;font-size:18px;letter-spacing:0.2px;">Growcontrol</div>
+        <div class="empty">Dashboard</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <a href="Options.html">Options</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Overview</h2>
+      <table id="overview_table">
+        <tr><th>Field</th><th>Value</th></tr>
+        <tr><td>Service</td><td><span id="service_status" class="status-pill status-unknown">unknown</span></td></tr>
+        <tr><td>Last update</td><td id="updated_at">-</td></tr>
+        <tr><td>Sensors</td><td id="overview_sensors">-</td></tr>
+        <tr><td>Attention</td><td id="overview_attention">-</td></tr>
+      </table>
+      <div class="empty" id="overview_hint" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Sensors</h2>
+      <div class="controls">
+        <label for="sensors_view_mode">View mode</label>
+        <select id="sensors_view_mode">
+          <option value="single" selected>Single view</option>
+          <option value="list">List view</option>
+          <option value="grid">Grid view</option>
+        </select>
+
+        <label for="sensors_filter">Filter</label>
+        <select id="sensors_filter">
+          <option value="all" selected>All</option>
+          <option value="ok">OK</option>
+          <option value="stale">Stale</option>
+          <option value="error">Error</option>
+          <option value="disabled">Disabled</option>
+        </select>
+
+        <label for="sensors_search">Search</label>
+        <input id="sensors_search" placeholder="name or id…" />
+
+        <div id="sensors_single_controls" class="controls" style="padding:0;">
+          <label for="sensors_single_select">Sensor</label>
+          <select id="sensors_single_select"><option value="">-- no sensor available --</option></select>
+          <div class="row">
+            <button id="refresh_single_btn" class="btn primary" type="button">Refresh this sensor now</button>
+            <span id="refresh_single_msg" class="empty"></span>
+          </div>
+        </div>
+      </div>
+
+      <div id="sensors_single_view" style="margin-top:12px;"></div>
+      <div id="sensors_list_view" style="display:none;margin-top:12px;"></div>
+      <div id="sensors_grid_view" style="display:none;margin-top:12px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>Weather</h2>
+      <table id="weather_table">
+        <tr><th>Field</th><th>Value</th></tr>
+        <tr><td>Status</td><td><span id="weather_status" class="status-pill status-unknown">unknown</span></td></tr>
+        <tr><td>Temperature</td><td id="weather_temperature">-</td></tr>
+        <tr><td>Humidity</td><td id="weather_humidity">-</td></tr>
+        <tr><td>Condition</td><td id="weather_condition">-</td></tr>
+        <tr><td>Last success</td><td id="weather_last_success">-</td></tr>
+      </table>
+      <div class="empty" style="margin-top:8px;">Configure in <a href="Options.html">Options</a>.</div>
+    </div>
+
+    <div class="card">
+      <h2>Analytics</h2>
+      <div class="analytics-grid">
+        <div class="controls">
+          <label for="analytics_sensor_select">Sensor</label>
+          <select id="analytics_sensor_select"><option value="">-- no sensor available --</option></select>
+
+          <label for="analytics_range_select">Time range</label>
+          <select id="analytics_range_select">
+            <option value="h1">1 hour</option>
+            <option value="h12">12 hours</option>
+            <option value="24h">24 hours</option>
+            <option value="7d" selected>7 days</option>
+            <option value="custom">Custom time range…</option>
+          </select>
+          <div class="row" id="custom_range_row" style="display:none;">
+            <span class="empty">Custom:</span>
+            <input id="custom_range_value" type="number" min="1" max="3650" value="12" style="width:90px;" />
+            <select id="custom_range_unit" style="width:140px;">
+              <option value="h">hours</option>
+              <option value="d">days</option>
+            </select>
+            <button id="apply_custom_range" class="btn" type="button">Apply</button>
+          </div>
+
+          <p class="empty" style="margin:0 0 8px 0;">Time zone for chart labels is set in <a href="Options.html">Options</a> → Dashboard display.</p>
+
+          <div class="row">
+            <button id="refresh_selected_btn" class="btn primary" type="button">Refresh selected sensor now</button>
+            <span id="refresh_selected_msg" class="empty"></span>
+          </div>
+        </div>
+
+        <div>
+          <p id="watering_forecast" class="empty">Forecast not available yet.</p>
+          <canvas id="moisture_chart"></canvas>
+          <canvas id="temperature_chart"></canvas>
+          <canvas id="ec_moisture_chart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const apiBase = "/growcontrol-api";
+    let currentSensors = [];
+    let activeAnalyticsSensorId = "";
+    let activeAnalyticsRange = "7d";
+    let customRangeKey = "h12";
+    let moistureChart = null;
+    let temperatureChart = null;
+    let ecMoistureChart = null;
+    let requiresApiKey = false;
+    let lastStatusData = null;
+    let sensorsFilter = "all";
+    let sensorsSearch = "";
+    /** IANA zone for chart/overview timestamps, or "" for browser locale default */
+    let chartTimeZone = "";
+
+    async function apiRequest(path, method = "GET", body = undefined) {
+      const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
+      const response = await fetch(`${apiBase}${path}`, {
+        method,
+        headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      let payload = {};
+      try { payload = await response.json(); } catch (_) { payload = {}; }
+      if (!response.ok) throw new Error(payload.error || `${path} failed with status ${response.status}`);
+      return payload;
+    }
+
+    function setStatus(id, value) {
+      const el = document.getElementById(id);
+      const normalized = (value || "unknown").toLowerCase();
+      el.className = "status-pill status-" + normalized;
+      el.textContent = normalized;
+    }
+
+    function formatDateTime(date) {
+      if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "-";
+      if (!chartTimeZone) return date.toLocaleString();
+      try {
+        return new Intl.DateTimeFormat(undefined, {
+          dateStyle: "short",
+          timeStyle: "short",
+          timeZone: chartTimeZone,
+        }).format(date);
+      } catch (_) {
+        return date.toLocaleString();
+      }
+    }
+
+    function formatIso(value) {
+      if (!value) return "-";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return formatDateTime(date);
+    }
+
+    function syncChartTimeZoneFromStorage() {
+      chartTimeZone = (window.localStorage.getItem("growcontrol_chart_timezone") || "").trim();
+    }
+
+    function formatAge(iso) {
+      if (!iso) return "-";
+      const t = new Date(iso).getTime();
+      if (!Number.isFinite(t)) return iso;
+      const s = Math.floor((Date.now() - t) / 1000);
+      if (s < 0) return "just now";
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 48) return `${h}h ago`;
+      const d = Math.floor(h / 24);
+      return `${d}d ago`;
+    }
+
+    function parseNumber(v) {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function formatWeatherTemp(value) {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return "-";
+      // OpenWeather returns Kelvin when units are missing ("standard").
+      // If we see a clearly Kelvin-looking value, convert to °C for a sane default.
+      const c = n > 100 ? (n - 273.15) : n;
+      return `${c.toFixed(1)} °C`;
+    }
+
+    function buildForecast(readings, threshold = 25) {
+      const points = readings
+        .filter((r) => r.status === "ok" && parseNumber(r.moisture) !== null)
+        .map((r) => ({ t: new Date(r.ts), moisture: parseNumber(r.moisture) }))
+        .filter((r) => !Number.isNaN(r.t.getTime()));
+      if (points.length < 4) return "Need at least 4 moisture points for forecast.";
+
+      const recent = points.slice(-40);
+      const t0 = recent[0].t.getTime();
+      const xs = recent.map((p) => (p.t.getTime() - t0) / 3600000);
+      const ys = recent.map((p) => p.moisture);
+      const n = xs.length;
+      const sumX = xs.reduce((a, b) => a + b, 0);
+      const sumY = ys.reduce((a, b) => a + b, 0);
+      const sumXY = xs.reduce((a, x, i) => a + x * ys[i], 0);
+      const sumXX = xs.reduce((a, x) => a + x * x, 0);
+      const denom = n * sumXX - sumX * sumX;
+      if (Math.abs(denom) < 1e-9) return "Forecast unavailable (insufficient variance).";
+
+      const slope = (n * sumXY - sumX * sumY) / denom;
+      const current = ys[ys.length - 1];
+      if (current <= threshold) return `Moisture is already at ${current.toFixed(1)}% (threshold ${threshold}%). Watering now is recommended.`;
+      if (slope >= -0.01) return `No clear drying trend detected (slope ${slope.toFixed(3)}%/h).`;
+
+      const hoursUntil = (threshold - current) / slope;
+      if (!Number.isFinite(hoursUntil) || hoursUntil <= 0) return "Forecast unavailable.";
+      const eta = new Date(Date.now() + hoursUntil * 3600000);
+      return `Estimated watering time: ${formatDateTime(eta)} (current ${current.toFixed(1)}%, threshold ${threshold}%, trend ${slope.toFixed(3)}%/h).`;
+    }
+
+    function computeSaltStressMarkers(readings, thr = { dMoist: -1.0, dEC: 5.0 }) {
+      const ok = readings
+        .filter((r) => r.status === "ok")
+        .map((r) => ({ t: new Date(r.ts), moisture: parseNumber(r.moisture), conductivity: parseNumber(r.conductivity) }))
+        .filter((r) => Number.isFinite(r.t.getTime()));
+      const out = [];
+      for (let i = 1; i < ok.length; i++) {
+        const prev = ok[i - 1], cur = ok[i];
+        if (prev.moisture == null || cur.moisture == null) continue;
+        if (prev.conductivity == null || cur.conductivity == null) continue;
+        const dM = cur.moisture - prev.moisture;
+        const dE = cur.conductivity - prev.conductivity;
+        if (dM <= thr.dMoist && dE >= thr.dEC) out.push({ x: formatDateTime(cur.t), y: cur.moisture });
+      }
+      return out;
+    }
+
+    function upsertCharts(readings) {
+      const labels = readings.map((r) => formatIso(r.ts));
+      const moisture = readings.map((r) => parseNumber(r.moisture));
+      const temperature = readings.map((r) => parseNumber(r.temperature));
+      const threshold = readings.map(() => 25);
+      const conductivity = readings.map((r) => parseNumber(r.conductivity));
+      const saltStressMarkers = computeSaltStressMarkers(readings);
+
+      if (!moistureChart) {
+        moistureChart = new Chart(document.getElementById("moisture_chart"), {
+          type: "line",
+          data: { labels, datasets: [
+            { label: "Moisture %", data: moisture, borderColor: "#0969da", backgroundColor: "rgba(9,105,218,0.2)", tension: 0.2, spanGaps: true },
+            { label: "Threshold (25%)", data: threshold, borderColor: "#cf222e", borderDash: [6,6], pointRadius: 0, tension: 0 }
+          ] },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+      } else {
+        moistureChart.data.labels = labels;
+        moistureChart.data.datasets[0].data = moisture;
+        moistureChart.data.datasets[1].data = threshold;
+        moistureChart.update();
+      }
+
+      if (!temperatureChart) {
+        temperatureChart = new Chart(document.getElementById("temperature_chart"), {
+          type: "line",
+          data: { labels, datasets: [
+            { label: "Temperature °C", data: temperature, borderColor: "#1a7f37", backgroundColor: "rgba(26,127,55,0.2)", tension: 0.2, spanGaps: true }
+          ] },
+          options: { responsive: true, maintainAspectRatio: false }
+        });
+      } else {
+        temperatureChart.data.labels = labels;
+        temperatureChart.data.datasets[0].data = temperature;
+        temperatureChart.update();
+      }
+
+      if (!ecMoistureChart) {
+        ecMoistureChart = new Chart(document.getElementById("ec_moisture_chart"), {
+          data: { labels, datasets: [
+            { type:"line", label:"Moisture %", data: moisture, borderColor:"#0969da", tension:0.2, spanGaps:true, yAxisID:"y1" },
+            { type:"line", label:"Conductivity", data: conductivity, borderColor:"#8250df", tension:0.2, spanGaps:true, yAxisID:"y2" },
+            { type:"scatter", label:"Salt-stress marker", data: saltStressMarkers, backgroundColor:"#cf222e", yAxisID:"y1" }
+          ] },
+          options: { responsive:true, maintainAspectRatio:false, scales:{ y1:{position:"left"}, y2:{position:"right", grid:{drawOnChartArea:false}} } }
+        });
+      } else {
+        ecMoistureChart.data.labels = labels;
+        ecMoistureChart.data.datasets[0].data = moisture;
+        ecMoistureChart.data.datasets[1].data = conductivity;
+        ecMoistureChart.data.datasets[2].data = saltStressMarkers;
+        ecMoistureChart.update();
+      }
+    }
+
+    function updateAnalyticsSensorSelect() {
+      const select = document.getElementById("analytics_sensor_select");
+      select.innerHTML = "";
+      if (!currentSensors.length) {
+        select.innerHTML = '<option value="">-- no sensor available --</option>';
+        activeAnalyticsSensorId = "";
+        return;
+      }
+      currentSensors.forEach((sensor) => {
+        const option = document.createElement("option");
+        option.value = sensor.id;
+        option.textContent = `${sensor.name || sensor.id} (${sensor.id})`;
+        select.appendChild(option);
+      });
+      if (!activeAnalyticsSensorId || !currentSensors.some((s) => s.id === activeAnalyticsSensorId)) {
+        const saved = (window.localStorage.getItem("growcontrol_analytics_sensor_id") || "").trim();
+        activeAnalyticsSensorId = (saved && currentSensors.some((s) => s.id === saved)) ? saved : currentSensors[0].id;
+      }
+      select.value = activeAnalyticsSensorId;
+    }
+
+    async function refreshAnalytics() {
+      const forecastEl = document.getElementById("watering_forecast");
+      if (!activeAnalyticsSensorId) {
+        forecastEl.textContent = "Forecast not available yet.";
+        return;
+      }
+      const data = await apiRequest(`/api/history?sensor_id=${encodeURIComponent(activeAnalyticsSensorId)}&range=${encodeURIComponent(activeAnalyticsRange)}&limit=2000`);
+      const readings = data.readings || [];
+      if (!readings.length) {
+        forecastEl.textContent = "No historical data yet for this sensor.";
+        return;
+      }
+      upsertCharts(readings);
+      forecastEl.textContent = buildForecast(readings, 25);
+    }
+
+    function sensorCardHtml(sensorId, s, pollMinutes) {
+      const name = s.name || sensorId;
+      const status = (s.status || "unknown").toLowerCase();
+      const lastSuccess = s.last_success || null;
+      const battery = (s.last_metrics && typeof s.last_metrics.battery === "number") ? s.last_metrics.battery : null;
+      const staleAfterSeconds = Math.max(5 * 60, pollMinutes * 60) * 2 + 5 * 60;
+      const t = lastSuccess ? new Date(lastSuccess).getTime() : NaN;
+      const isStale = Number.isFinite(t) ? (Date.now() - t) / 1000 > staleAfterSeconds : false;
+      const statusPill = status === "error" ? "err" : (isStale ? "warn" : "ok");
+      const battPill = (typeof battery === "number") ? (battery <= 15 ? "err" : battery <= 30 ? "warn" : "ok") : "neutral";
+      const m = s.last_metrics || {};
+      const enabled = s.enabled !== false;
+      const moisturePct = typeof m.moisture === "number" ? Math.max(0, Math.min(100, m.moisture)) : null;
+      const temp = (typeof m.temperature === "number") ? m.temperature : null;
+      const ec = (typeof m.conductivity === "number") ? m.conductivity : null;
+      const light = (typeof m.light === "number") ? m.light : null;
+
+      return `
+        <div class="tile">
+          <div class="row" style="justify-content:space-between;">
+            <div class="name">${name}</div>
+            <span class="pill ${enabled ? statusPill : "neutral"}">${enabled ? `${status}${isStale && status !== "error" ? " (stale)" : ""}` : "disabled"}</span>
+          </div>
+          <div class="empty" style="margin-top:6px;">${sensorId}</div>
+          <div class="row" style="margin-top:10px;">
+            <span class="pill ${battPill}">battery: ${typeof battery === "number" ? `${battery}%` : "-"}</span>
+            <span class="pill neutral">last success: ${lastSuccess ? formatAge(lastSuccess) : "-"}</span>
+            <a class="muted-link" href="Options.html#sensor-${encodeURIComponent(sensorId)}">open in Options</a>
+          </div>
+          <div style="margin-top:12px;">
+            <div class="empty" style="margin-bottom:6px;">Moisture</div>
+            <div class="bar"><div style="width:${moisturePct == null ? 0 : moisturePct}%;"></div></div>
+            <div class="row" style="margin-top:10px;">
+              <span class="pill neutral">moisture: ${m.moisture ?? "-"}</span>
+              <span class="pill neutral">temp: ${temp == null ? "-" : temp}</span>
+              <span class="pill neutral">ec: ${ec == null ? "-" : ec}</span>
+              <span class="pill neutral">light: ${light == null ? "-" : light}</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSensorsViews(statusData) {
+      const sensors = statusData && statusData.sensors ? statusData.sensors : {};
+      const pollMinutes = Number(statusData && statusData.sensor_poll_minutes ? statusData.sensor_poll_minutes : 60);
+      const entriesAll = Object.entries(sensors);
+
+      const search = (sensorsSearch || "").trim().toLowerCase();
+      const entries = entriesAll.filter(([id, s]) => {
+        const status = ((s && s.status) ? s.status : "unknown").toLowerCase();
+        const enabled = s && s.enabled !== false;
+        const lastSuccess = s && s.last_success ? s.last_success : null;
+        const t = lastSuccess ? new Date(lastSuccess).getTime() : NaN;
+        const staleAfterSeconds = Math.max(5 * 60, pollMinutes * 60) * 2 + 5 * 60;
+        const stale = Number.isFinite(t) ? (Date.now() - t) / 1000 > staleAfterSeconds : false;
+
+        let ok = true;
+        if (sensorsFilter === "ok") ok = enabled && status === "ok" && !stale;
+        else if (sensorsFilter === "stale") ok = enabled && stale && status !== "error";
+        else if (sensorsFilter === "error") ok = enabled && status === "error";
+        else if (sensorsFilter === "disabled") ok = !enabled;
+        if (!ok) return false;
+
+        if (!search) return true;
+        const name = (s && s.name) ? String(s.name).toLowerCase() : "";
+        return id.toLowerCase().includes(search) || name.includes(search);
+      });
+
+      const singleSelect = document.getElementById("sensors_single_select");
+      singleSelect.innerHTML = "";
+      if (!entries.length) {
+        singleSelect.innerHTML = '<option value="">-- no sensor available --</option>';
+      } else {
+        entries.forEach(([id, s]) => {
+          const opt = document.createElement("option");
+          opt.value = id;
+          opt.textContent = `${(s && s.name) ? s.name : id} (${id})`;
+          singleSelect.appendChild(opt);
+        });
+        const savedSingle = (window.localStorage.getItem("growcontrol_sensors_single_id") || "").trim();
+        if (savedSingle && entries.some(([id]) => id === savedSingle)) {
+          singleSelect.value = savedSingle;
+        } else if (!singleSelect.value) {
+          singleSelect.value = entries[0][0];
+        }
+      }
+
+      const singleId = singleSelect.value;
+      const single = singleId ? (sensors[singleId] || {}) : null;
+      document.getElementById("sensors_single_view").innerHTML =
+        singleId && single ? sensorCardHtml(singleId, single, pollMinutes) : '<div class="empty">No sensors.</div>';
+
+      const listHolder = document.getElementById("sensors_list_view");
+      if (!entries.length) {
+        listHolder.innerHTML = '<div class="empty">No sensors.</div>';
+      } else {
+        listHolder.innerHTML = `
+          <table>
+            <tr><th>Sensor</th><th>Status</th><th>Battery</th><th>Moisture</th><th>Temp</th><th>Last success</th></tr>
+            ${entries.map(([id, s]) => {
+              const st = (s.status || "unknown").toLowerCase();
+              const lastSuccess = s.last_success || null;
+              const battery = (s.last_metrics && typeof s.last_metrics.battery === "number") ? s.last_metrics.battery : null;
+              const m = s.last_metrics || {};
+              return `
+                <tr>
+                  <td><a href="Options.html#sensor-${encodeURIComponent(id)}">${(s.name || id)}</a></td>
+                  <td>${st}</td>
+                  <td>${typeof battery === "number" ? `${battery}%` : "-"}</td>
+                  <td>${m.moisture ?? "-"}</td>
+                  <td>${m.temperature ?? "-"}</td>
+                  <td>${lastSuccess ? formatAge(lastSuccess) : "-"}</td>
+                </tr>
+              `;
+            }).join("")}
+          </table>
+        `;
+      }
+
+      const gridHolder = document.getElementById("sensors_grid_view");
+      if (!entries.length) {
+        gridHolder.innerHTML = '<div class="empty">No sensors.</div>';
+      } else {
+        gridHolder.innerHTML = `<div class="tiles">${entries.map(([id, s]) => sensorCardHtml(id, s, pollMinutes)).join("")}</div>`;
+      }
+    }
+
+    function setRange(rangeKey) {
+      activeAnalyticsRange = rangeKey;
+      refreshAnalytics();
+    }
+
+    async function refresh() {
+      syncChartTimeZoneFromStorage();
+      try {
+        const statusResp = await fetch("status.json", { cache: "no-store" });
+        const statusData = await statusResp.json();
+        lastStatusData = statusData;
+        setStatus("service_status", statusData.service_status || "unknown");
+        document.getElementById("updated_at").textContent = formatIso(statusData.updated_at);
+
+        const sensors = statusData.sensors || {};
+        const entries = Object.entries(sensors).map(([id, s]) => ({ id, ...(s || {}) }));
+        const configured = entries.length;
+        const okCount = entries.filter((s) => (s.status || "").toLowerCase() === "ok").length;
+        const errCount = entries.filter((s) => (s.status || "").toLowerCase() === "error").length;
+        const pollMinutes = Number(statusData.sensor_poll_minutes || 60);
+        const staleAfterSeconds = Math.max(5 * 60, pollMinutes * 60) * 2 + 5 * 60;
+        const staleCount = entries.filter((s) => {
+          const iso = s.last_success;
+          if (!iso) return false;
+          const t = new Date(iso).getTime();
+          if (!Number.isFinite(t)) return false;
+          return (Date.now() - t) / 1000 > staleAfterSeconds;
+        }).length;
+
+        const attentionCount = entries.filter((s) => {
+          const st = (s.status || "unknown").toLowerCase();
+          if (st === "error") return true;
+          const iso = s.last_success;
+          if (!iso) return false;
+          const t = new Date(iso).getTime();
+          if (!Number.isFinite(t)) return false;
+          return (Date.now() - t) / 1000 > staleAfterSeconds;
+        }).length;
+
+        const sensorsText = `configured=${configured}, ok=${okCount}, stale=${staleCount}, error=${errCount}`;
+        const attentionText = attentionCount ? `${attentionCount} sensor(s) need attention` : "All good";
+        const hintText = configured
+          ? `Stale uses ~2× polling interval (${pollMinutes}m). Last update: ${formatAge(statusData.updated_at)}.`
+          : "No sensors configured yet (go to Options to onboard).";
+
+        const sensorsEl = document.getElementById("overview_sensors");
+        if (sensorsEl) sensorsEl.textContent = sensorsText;
+        const attentionEl = document.getElementById("overview_attention");
+        if (attentionEl) attentionEl.textContent = attentionText;
+        const hintEl = document.getElementById("overview_hint");
+        if (hintEl) hintEl.textContent = hintText;
+
+        // Attention list for overview: show error + stale sensors (max 6)
+        const attention = entries
+          .map((s) => {
+            const lastSuccess = s.last_success || null;
+            const t = lastSuccess ? new Date(lastSuccess).getTime() : NaN;
+            const ageSec = Number.isFinite(t) ? (Date.now() - t) / 1000 : null;
+            const stale = ageSec != null ? ageSec > staleAfterSeconds : false;
+            const status = (s.status || "unknown").toLowerCase();
+            const battery = (s.last_metrics && typeof s.last_metrics.battery === "number") ? s.last_metrics.battery : null;
+            return { id: s.id, name: s.name || s.id, status, battery, lastSuccess, stale, ageSec: ageSec ?? 0 };
+          })
+          .filter((s) => s.status === "error" || s.stale)
+          .sort((a, b) => {
+            const aErr = a.status === "error" ? 1 : 0;
+            const bErr = b.status === "error" ? 1 : 0;
+            if (aErr !== bErr) return bErr - aErr; // errors first
+            return (b.ageSec || 0) - (a.ageSec || 0); // then most-stale first
+          })
+          .slice(0, 6);
+
+        const attentionEl2 = document.getElementById("overview_attention");
+        if (attentionEl2 && attention.length) {
+          attentionEl2.innerHTML = attention
+            .map((s) => `<a href="Options.html#sensor-${encodeURIComponent(s.id)}">${s.name}</a>${s.status === "error" ? " (error)" : " (stale)"}`)
+            .join(", ");
+        }
+
+        // Weather display from status.json
+        try {
+          const w = (statusData.weather || {});
+          setStatus("weather_status", w.status || "unknown");
+          const lastOk = document.getElementById("weather_last_success");
+          if (lastOk) lastOk.textContent = w.last_success ? formatAge(w.last_success) : "-";
+        } catch (_) {}
+
+        renderSensorsViews(statusData);
+      } catch (err) {
+        setStatus("service_status", "error");
+      }
+
+      try {
+        const health = await apiRequest("/api/health");
+        requiresApiKey = Boolean(health.requires_api_key);
+        const sensorsConfig = await apiRequest("/api/sensors");
+        currentSensors = sensorsConfig.sensors || [];
+        updateAnalyticsSensorSelect();
+        await refreshAnalytics();
+      } catch (err) {}
+
+      // Weather data file (collector writes this when enabled)
+      try {
+        const weatherResp = await fetch("weatherdata", { cache: "no-store" });
+        if (weatherResp.ok) {
+          const weather = await weatherResp.json();
+          const temp = weather.main?.temp;
+          const hum = weather.main?.humidity;
+          document.getElementById("weather_temperature").textContent = formatWeatherTemp(temp);
+          document.getElementById("weather_humidity").textContent = (hum ?? "-") + (hum === "-" ? "" : " %");
+          document.getElementById("weather_condition").textContent = weather.weather?.[0]?.description || "-";
+        }
+      } catch (_) {}
+    }
+
+    document.getElementById("analytics_sensor_select").addEventListener("change", async (e) => {
+      activeAnalyticsSensorId = e.target.value;
+      window.localStorage.setItem("growcontrol_analytics_sensor_id", activeAnalyticsSensorId);
+      await refreshAnalytics();
+    });
+
+    const rangeSelect = document.getElementById("analytics_range_select");
+    const customRow = document.getElementById("custom_range_row");
+    const refreshBtn = document.getElementById("refresh_selected_btn");
+    const refreshMsg = document.getElementById("refresh_selected_msg");
+
+    rangeSelect.value = "7d";
+    rangeSelect.addEventListener("change", async () => {
+      const v = rangeSelect.value;
+      window.localStorage.setItem("growcontrol_analytics_range", v);
+      if (v === "custom") {
+        customRow.style.display = "flex";
+        setRange(customRangeKey);
+      } else {
+        customRow.style.display = "none";
+        setRange(v);
+      }
+    });
+
+    document.getElementById("apply_custom_range").addEventListener("click", () => {
+      const v = Number(document.getElementById("custom_range_value").value);
+      const unit = document.getElementById("custom_range_unit").value;
+      if (!Number.isFinite(v) || v < 1) return;
+      customRangeKey = `${unit}${Math.floor(v)}`;
+      window.localStorage.setItem("growcontrol_analytics_custom_range", customRangeKey);
+      rangeSelect.value = "custom";
+      customRow.style.display = "flex";
+      setRange(customRangeKey);
+    });
+
+    refreshBtn.addEventListener("click", async () => {
+      refreshMsg.textContent = "";
+      if (!activeAnalyticsSensorId) return;
+      const hasKey = Boolean((window.localStorage.getItem("growcontrol_api_key") || "").trim());
+      if (requiresApiKey && !hasKey) {
+        refreshMsg.textContent = "API key required (set it in Options).";
+        return;
+      }
+      refreshBtn.disabled = true;
+      refreshMsg.textContent = "Refreshing…";
+      try {
+        await apiRequest(`/api/sensors/${encodeURIComponent(activeAnalyticsSensorId)}/refresh`, "POST", { timeout: 25 });
+        refreshMsg.textContent = "Refreshed.";
+        await refresh(); // updates summary + attention + charts
+      } catch (err) {
+        refreshMsg.textContent = String(err);
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    });
+
+    // Sensors view mode toggles
+    const sensorsMode = document.getElementById("sensors_view_mode");
+    const sensorsFilterSelect = document.getElementById("sensors_filter");
+    const sensorsSearchInput = document.getElementById("sensors_search");
+    const sensorsSingleControls = document.getElementById("sensors_single_controls");
+    const sensorsSingleView = document.getElementById("sensors_single_view");
+    const sensorsListView = document.getElementById("sensors_list_view");
+    const sensorsGridView = document.getElementById("sensors_grid_view");
+    const sensorsSingleSelect = document.getElementById("sensors_single_select");
+    const refreshSingleBtn = document.getElementById("refresh_single_btn");
+    const refreshSingleMsg = document.getElementById("refresh_single_msg");
+
+    function setSensorsMode(mode) {
+      window.localStorage.setItem("growcontrol_sensors_view_mode", mode);
+      sensorsSingleControls.style.display = mode === "single" ? "grid" : "none";
+      sensorsSingleView.style.display = mode === "single" ? "block" : "none";
+      sensorsListView.style.display = mode === "list" ? "block" : "none";
+      sensorsGridView.style.display = mode === "grid" ? "block" : "none";
+      if (lastStatusData) renderSensorsViews(lastStatusData);
+    }
+
+    sensorsMode.addEventListener("change", () => setSensorsMode(sensorsMode.value));
+    sensorsFilterSelect.addEventListener("change", () => {
+      sensorsFilter = sensorsFilterSelect.value;
+      window.localStorage.setItem("growcontrol_sensors_filter", sensorsFilter);
+      if (lastStatusData) renderSensorsViews(lastStatusData);
+    });
+    sensorsSearchInput.addEventListener("input", () => {
+      sensorsSearch = sensorsSearchInput.value || "";
+      window.localStorage.setItem("growcontrol_sensors_search", sensorsSearch);
+      if (lastStatusData) renderSensorsViews(lastStatusData);
+    });
+    sensorsSingleSelect.addEventListener("change", () => {
+      window.localStorage.setItem("growcontrol_sensors_single_id", sensorsSingleSelect.value || "");
+      if (lastStatusData) renderSensorsViews(lastStatusData);
+    });
+
+    refreshSingleBtn.addEventListener("click", async () => {
+      refreshSingleMsg.textContent = "";
+      const sensorId = sensorsSingleSelect.value;
+      if (!sensorId) return;
+      const hasKey = Boolean((window.localStorage.getItem("growcontrol_api_key") || "").trim());
+      if (requiresApiKey && !hasKey) {
+        refreshSingleMsg.textContent = "API key required (set it in Options).";
+        return;
+      }
+      refreshSingleBtn.disabled = true;
+      refreshSingleMsg.textContent = "Refreshing…";
+      try {
+        await apiRequest(`/api/sensors/${encodeURIComponent(sensorId)}/refresh`, "POST", { timeout: 25 });
+        refreshSingleMsg.textContent = "Refreshed.";
+        await refresh();
+      } catch (err) {
+        refreshSingleMsg.textContent = String(err);
+      } finally {
+        refreshSingleBtn.disabled = false;
+      }
+    });
+
+    setSensorsMode("single");
+
+    // Restore persisted UI state
+    try {
+      const savedSensorsMode = window.localStorage.getItem("growcontrol_sensors_view_mode");
+      if (savedSensorsMode) sensorsMode.value = savedSensorsMode;
+      sensorsFilter = window.localStorage.getItem("growcontrol_sensors_filter") || "all";
+      sensorsFilterSelect.value = sensorsFilter;
+      sensorsSearch = window.localStorage.getItem("growcontrol_sensors_search") || "";
+      sensorsSearchInput.value = sensorsSearch;
+
+      const savedRange = window.localStorage.getItem("growcontrol_analytics_range");
+      if (savedRange) rangeSelect.value = savedRange;
+      const savedCustom = window.localStorage.getItem("growcontrol_analytics_custom_range");
+      if (savedCustom) customRangeKey = savedCustom;
+      if (rangeSelect.value === "custom") customRow.style.display = "flex";
+
+      const savedAnalyticsSensor = window.localStorage.getItem("growcontrol_analytics_sensor_id") || "";
+      if (savedAnalyticsSensor) activeAnalyticsSensorId = savedAnalyticsSensor;
+      syncChartTimeZoneFromStorage();
+    } catch (_) {}
+
+    setSensorsMode(sensorsMode.value);
+
+    refresh();
+    setInterval(refresh, 15000);
+  </script>
+</body>
+</html>

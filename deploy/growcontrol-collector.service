@@ -1,0 +1,16 @@
+[Unit]
+Description=Growcontrol unified sensor collector
+After=network.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Growcontrol
+EnvironmentFile=/home/pi/Growcontrol/.env
+ExecStart=/usr/bin/python3 /home/pi/Growcontrol/growcontrol_collector.py --settings /home/pi/Growcontrol/config/settings.json --sensors /home/pi/Growcontrol/config/sensors.json
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Growcontrol Options</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #f4f6f8; color: #1b1f24; }
+    .container { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; }
+    .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .topbar a { text-decoration:none; border:1px solid #d0d7de; padding:8px 10px; border-radius:8px; color:#1b1f24; background:#fff; }
+    .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .controls { display:grid; gap:8px; max-width:520px; }
+    .empty { color:#57606a; font-style:italic; }
+    .btn { border:1px solid #d0d7de; background:#fff; padding:8px 10px; border-radius:10px; cursor:pointer; }
+    .btn.primary { background:#0969da; color:#fff; border-color:#0969da; }
+    .btn.danger { background:#b42318; color:#fff; border-color:#b42318; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    input, select { border:1px solid #d0d7de; border-radius:8px; padding:8px; }
+    .pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700; text-transform:uppercase; border:1px solid #d0d7de; }
+    .pill.ok { background:#dafbe1; color:#116329; border-color:#b4f1c0; }
+    .pill.warn { background:#fff8c5; color:#7d4e00; border-color:#f5e3a5; }
+    .pill.err { background:#ffebe9; color:#b42318; border-color:#ffd1cc; }
+    .pill.neutral { background:#f6f8fa; color:#57606a; }
+    .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+    .callout { border:1px solid #d0d7de; border-radius:8px; padding:10px 12px; background:#f6f8fa; }
+    .callout.err { background:#ffebe9; border-color:#ffd1cc; }
+    .highlight { outline: 3px solid #0969da; outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card topbar">
+      <div>
+        <strong>Growcontrol</strong> <span class="empty">Options</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <a href="Dashboard.html">Dashboard</a>
+      </div>
+    </div>
+
+    <div id="auth_notice" class="callout" style="display:none;"></div>
+
+    <div class="card">
+      <h2>Dashboard display</h2>
+      <div class="controls">
+        <p class="empty" style="margin:0 0 8px 0;">
+          Chart labels, overview “Last update”, and watering ETA on the <a href="Dashboard.html">Dashboard</a> use this time zone.
+          Stored in this browser only (<code>localStorage</code>).
+        </p>
+        <label for="chart_timezone_select">Chart time zone</label>
+        <select id="chart_timezone_select">
+          <option value="">Browser default</option>
+          <option value="UTC">UTC</option>
+          <option value="Europe/Berlin">Europe/Berlin</option>
+          <option value="Europe/London">Europe/London</option>
+          <option value="Europe/Paris">Europe/Paris</option>
+          <option value="Europe/Madrid">Europe/Madrid</option>
+          <option value="Europe/Warsaw">Europe/Warsaw</option>
+          <option value="America/New_York">America/New_York</option>
+          <option value="America/Chicago">America/Chicago</option>
+          <option value="America/Los_Angeles">America/Los_Angeles</option>
+          <option value="Asia/Tokyo">Asia/Tokyo</option>
+          <option value="Australia/Sydney">Australia/Sydney</option>
+          <option value="__custom">Other (IANA)…</option>
+        </select>
+        <div class="row" id="chart_timezone_custom_row" style="display:none;">
+          <input id="chart_timezone_custom" placeholder="e.g. Europe/Amsterdam" style="flex:1;min-width:180px;" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Sensors</h2>
+      <div id="sensors" class="grid"></div>
+      <p id="empty_message" class="empty">No sensors configured yet.</p>
+    </div>
+
+    <div class="card">
+      <h2>Data Storage</h2>
+      <div class="controls">
+        <label for="retention_select">Keep history for</label>
+        <select id="retention_select">
+          <option value="1w">1 week</option>
+          <option value="1m">1 month</option>
+          <option value="3m">3 months</option>
+          <option value="6m">6 months</option>
+          <option value="1y">1 year</option>
+        </select>
+        <button id="save_retention_btn" class="btn primary" type="button">Save retention</button>
+        <button id="clear_data_btn" class="btn danger" type="button">Delete all stored history</button>
+        <div id="storage_message" class="empty"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Weather (OpenWeather)</h2>
+      <div class="controls">
+        <div class="callout">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Optional</strong>
+            <span class="pill neutral">OpenWeather</span>
+          </div>
+          <div class="empty" style="margin-top:6px;">
+            Configure location and API key here. The collector will start writing <code>weatherdata</code> when enabled.
+          </div>
+          <div class="empty" style="margin-top:6px;">
+            Poll interval: <strong>every 15 minutes</strong>.
+          </div>
+        </div>
+
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="weather_enabled" />
+          Enable weather
+        </label>
+
+        <label for="weather_lat">Latitude</label>
+        <input id="weather_lat" type="number" step="0.000001" min="-90" max="90" />
+        <label for="weather_lon">Longitude</label>
+        <input id="weather_lon" type="number" step="0.000001" min="-180" max="180" />
+        <label for="weather_units">Units</label>
+        <select id="weather_units">
+          <option value="metric">metric (°C)</option>
+          <option value="imperial">imperial (°F)</option>
+          <option value="standard">standard (K)</option>
+        </select>
+
+        <label for="openweather_api_key">OpenWeather API key</label>
+        <input id="openweather_api_key" placeholder="paste key (stored in config/settings.json)" />
+
+        <button id="save_weather_btn" class="btn primary" data-write="1" type="button">Save weather settings</button>
+        <div id="weather_message" class="empty"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Collector polling</h2>
+      <div class="controls">
+        <div class="callout">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Battery-friendly setting</strong>
+            <span class="pill neutral">default: 60 min</span>
+          </div>
+          <div class="empty" style="margin-top:6px;">
+            BLE polling is battery intensive. Increase the interval to preserve battery life.
+          </div>
+        </div>
+
+        <label for="sensor_poll_minutes">Sensor poll interval (minutes)</label>
+        <input id="sensor_poll_minutes" type="number" min="5" max="1440" value="60" />
+        <button id="save_polling_btn" class="btn primary" data-write="1" type="button">Save polling settings</button>
+        <div id="polling_message" class="empty"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Bluetooth performance</h2>
+      <div class="controls">
+        <div class="callout">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Parallel sensor polling</strong>
+            <span class="pill neutral">default: 2</span>
+          </div>
+          <div class="empty" style="margin-top:6px;">
+            Higher values can reduce total poll time when you have many sensors, but may stress Bluetooth.
+          </div>
+        </div>
+        <label for="sensor_parallelism">Max parallel sensor polls (1..6)</label>
+        <input id="sensor_parallelism" type="number" min="1" max="6" value="2" />
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Onboard Sensor</h2>
+      <div class="controls">
+        <label for="api_key">API Key (optional)</label>
+        <input id="api_key" placeholder="leave empty unless configured" />
+        <button id="scan_btn" class="btn primary" type="button">Scan BLE Devices</button>
+        <label for="scan_select">Discovered devices</label>
+        <select id="scan_select"><option value="">-- no scan results --</option></select>
+        <label style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="show_all_devices" />
+          Show all devices (not only likely Flora)
+        </label>
+        <label for="sensor_id">Sensor ID</label>
+        <input id="sensor_id" placeholder="plant_1" />
+        <label for="sensor_name">Sensor Name</label>
+        <input id="sensor_name" placeholder="My Plant" />
+        <label for="sensor_mac">Sensor MAC</label>
+        <input id="sensor_mac" placeholder="AA:BB:CC:DD:EE:FF" />
+        <button id="verify_btn" class="btn" type="button">Verify Sensor</button>
+        <div id="verify_result" class="empty"></div>
+        <button id="add_btn" class="btn primary" type="button">Add Sensor</button>
+        <div id="onboard_message" class="empty"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const apiBase = "/growcontrol-api";
+    let lastScanDevices = [];
+    let writeLocked = false;
+    let sensorPollMinutes = 60;
+
+    async function apiRequest(path, method = "GET", body = undefined) {
+      const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
+      const response = await fetch(`${apiBase}${path}`, {
+        method,
+        headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      let payload = {};
+      try { payload = await response.json(); } catch (_) { payload = {}; }
+      if (!response.ok) {
+        if (response.status === 401) {
+          writeLocked = true;
+          updateAuthNotice();
+        }
+        throw new Error(payload.error || `${path} failed with status ${response.status}`);
+      }
+      return payload;
+    }
+
+    function updateAuthNotice() {
+      const el = document.getElementById("auth_notice");
+      const apiKey = (window.localStorage.getItem("growcontrol_api_key") || "").trim();
+      if (!writeLocked) {
+        el.style.display = "none";
+        el.textContent = "";
+        el.className = "callout";
+        return;
+      }
+      el.style.display = "block";
+      el.className = "callout err";
+      el.innerHTML = `
+        <div class="row" style="justify-content:space-between;">
+          <strong>API key required</strong>
+          <span class="pill err">locked</span>
+        </div>
+        <div class="empty" style="margin-top:6px;">
+          This Growcontrol instance is configured with <code>GROWCONTROL_API_KEY</code>. Enter the key below to unlock actions (scan/add/edit/remove, retention, delete history).
+        </div>
+        <div class="empty" style="margin-top:6px;">
+          Current key in browser: <code>${apiKey ? "set" : "empty"}</code>
+        </div>
+      `;
+      document.querySelectorAll("[data-write='1']").forEach((btn) => {
+        btn.disabled = !apiKey;
+      });
+    }
+
+    function formatAge(iso) {
+      if (!iso) return "-";
+      const t = new Date(iso).getTime();
+      if (!Number.isFinite(t)) return iso;
+      const s = Math.floor((Date.now() - t) / 1000);
+      if (s < 0) return "just now";
+      if (s < 60) return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 48) return `${h}h ago`;
+      const d = Math.floor(h / 24);
+      return `${d}d ago`;
+    }
+
+    function showMessage(message, isError) {
+      const box = document.getElementById("onboard_message");
+      box.style.color = isError ? "#b42318" : "#116329";
+      box.textContent = message;
+    }
+
+    function restoreChartTimezoneUI() {
+      const sel = document.getElementById("chart_timezone_select");
+      const row = document.getElementById("chart_timezone_custom_row");
+      const inp = document.getElementById("chart_timezone_custom");
+      const saved = (window.localStorage.getItem("growcontrol_chart_timezone") || "").trim();
+      if (!saved) {
+        sel.value = "";
+        row.style.display = "none";
+        inp.value = "";
+        return;
+      }
+      const presetMatch = Array.from(sel.options).some((o) => o.value === saved && o.value !== "__custom");
+      if (presetMatch) {
+        sel.value = saved;
+        row.style.display = "none";
+        inp.value = "";
+      } else {
+        sel.value = "__custom";
+        inp.value = saved;
+        row.style.display = "flex";
+      }
+    }
+
+    function persistChartTimezoneFromUI() {
+      const sel = document.getElementById("chart_timezone_select");
+      const inp = document.getElementById("chart_timezone_custom");
+      let tz = "";
+      if (sel.value === "__custom") tz = (inp.value || "").trim();
+      else tz = sel.value || "";
+      window.localStorage.setItem("growcontrol_chart_timezone", tz);
+    }
+
+    function renderScanOptions() {
+      const scanSelect = document.getElementById("scan_select");
+      const showAll = document.getElementById("show_all_devices").checked;
+      const floraCandidates = lastScanDevices.filter((d) => d.is_likely_flora);
+      const visible = showAll ? lastScanDevices : (floraCandidates.length ? floraCandidates : lastScanDevices);
+      scanSelect.innerHTML = "";
+      if (!visible.length) {
+        scanSelect.innerHTML = '<option value="">-- no scan results --</option>';
+        return;
+      }
+      visible.forEach((device) => {
+        const option = document.createElement("option");
+        option.value = device.mac;
+        const marker = device.is_likely_flora ? " [Flora]" : "";
+        option.textContent = `${device.mac} (${device.name || "unknown"})${marker}`;
+        scanSelect.appendChild(option);
+      });
+      document.getElementById("sensor_mac").value = visible[0].mac;
+    }
+
+    function renderSensors(sensors, statusData) {
+      const holder = document.getElementById("sensors");
+      const empty = document.getElementById("empty_message");
+      holder.innerHTML = "";
+      empty.style.display = sensors.length ? "none" : "block";
+      const statusSensors = (statusData && statusData.sensors) ? statusData.sensors : {};
+      sensors.forEach((s) => {
+        const st = statusSensors[s.id] || {};
+        const lastSuccess = st.last_success || null;
+        const metrics = st.last_metrics || {};
+        const battery = (metrics.battery ?? null);
+        const age = formatAge(lastSuccess);
+        const ageSeconds = lastSuccess ? Math.floor((Date.now() - new Date(lastSuccess).getTime()) / 1000) : null;
+        const expectedSeconds = Math.max(5 * 60, sensorPollMinutes * 60);
+        const staleAfterSeconds = expectedSeconds * 2 + 5 * 60;
+        const stale = ageSeconds != null ? ageSeconds > staleAfterSeconds : false;
+        const batteryTone = (typeof battery === "number")
+          ? (battery <= 15 ? "err" : battery <= 30 ? "warn" : "ok")
+          : "neutral";
+
+        const card = document.createElement("div");
+        card.className = "card";
+        card.id = `sensor-${s.id}`;
+        card.innerHTML = `
+          <div class="row" style="justify-content:space-between;">
+            <strong>${s.name || s.id}</strong>
+            <span class="pill ${s.enabled === false ? "neutral" : (stale ? "warn" : "ok")}">${s.enabled === false ? "disabled" : (stale ? "stale" : "ok")}</span>
+          </div>
+          <div class="empty" style="margin-top:6px;">${s.id} | ${s.mac}</div>
+          <div class="row" style="margin-top:10px;">
+            <span class="pill ${batteryTone}">battery: ${typeof battery === "number" ? `${battery}%` : "-"}</span>
+            <span class="pill ${stale ? "warn" : "neutral"}">last success: ${age}</span>
+            <span class="pill neutral">interval: ${sensorPollMinutes}m</span>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px;">
+            <button class="btn primary" data-write="1" data-action="refresh" data-id="${s.id}">Refresh now</button>
+            <button class="btn" data-write="1" data-action="rename" data-id="${s.id}" data-current-name="${(s.name || s.id).replace(/"/g, '&quot;')}">Rename</button>
+            <button class="btn" data-write="1" data-action="toggle" data-id="${s.id}" data-enabled="${s.enabled !== false}">
+              ${s.enabled !== false ? "Disable" : "Enable"}
+            </button>
+            <button class="btn danger" data-write="1" data-action="remove" data-id="${s.id}">Remove</button>
+          </div>
+        `;
+        holder.appendChild(card);
+      });
+
+      holder.querySelectorAll("button[data-action='refresh']").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const id = button.getAttribute("data-id");
+          if (!id) return;
+          button.disabled = true;
+          showMessage(`Refreshing ${id}...`, false);
+          try {
+            await apiRequest(`/api/sensors/${encodeURIComponent(id)}/refresh`, "POST", { timeout: 25 });
+            showMessage(`Refreshed ${id}`, false);
+            await refresh();
+          } catch (err) {
+            showMessage(String(err), true);
+            await refresh();
+          } finally {
+            button.disabled = false;
+          }
+        });
+      });
+
+      holder.querySelectorAll("button[data-action='rename']").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const id = button.getAttribute("data-id");
+          const currentName = button.getAttribute("data-current-name") || "";
+          const name = window.prompt("New sensor name:", currentName);
+          if (!id || !name || !name.trim()) return;
+          await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { name: name.trim(), restart: false });
+          await refresh();
+        });
+      });
+
+      holder.querySelectorAll("button[data-action='toggle']").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const id = button.getAttribute("data-id");
+          const enabled = button.getAttribute("data-enabled") !== "true";
+          if (!id) return;
+          await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { enabled, restart: false });
+          await refresh();
+        });
+      });
+
+      holder.querySelectorAll("button[data-action='remove']").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const id = button.getAttribute("data-id");
+          if (!id) return;
+          if (!window.confirm(`Remove sensor '${id}'?`)) return;
+          await apiRequest(`/api/sensors/${encodeURIComponent(id)}?restart=0`, "DELETE");
+          await refresh();
+        });
+      });
+    }
+
+    async function refresh() {
+      let statusData = {};
+      try {
+        const resp = await fetch("status.json", { cache: "no-store" });
+        if (resp.ok) statusData = await resp.json();
+      } catch (_) {}
+
+      const sensorsConfig = await apiRequest("/api/sensors");
+      const retention = await apiRequest("/api/settings/retention");
+      if (retention.retention_key) document.getElementById("retention_select").value = retention.retention_key;
+
+      try {
+        const polling = await apiRequest("/api/settings/polling");
+        if (polling.sensor_poll_minutes != null) {
+          sensorPollMinutes = Number(polling.sensor_poll_minutes) || 60;
+          document.getElementById("sensor_poll_minutes").value = String(polling.sensor_poll_minutes);
+        }
+        if (polling.sensor_parallelism != null) {
+          document.getElementById("sensor_parallelism").value = String(polling.sensor_parallelism);
+        }
+      } catch (_) {
+        sensorPollMinutes = 60;
+      }
+
+      try {
+        const weather = await apiRequest("/api/settings/weather");
+        document.getElementById("weather_enabled").checked = Boolean(weather.weather_enabled);
+        document.getElementById("weather_lat").value = String(weather.weather_lat ?? 0.0);
+        document.getElementById("weather_lon").value = String(weather.weather_lon ?? 0.0);
+        document.getElementById("weather_units").value = String(weather.weather_units || "metric");
+      } catch (_) {}
+
+      renderSensors(sensorsConfig.sensors || [], statusData);
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      const apiKeyInput = document.getElementById("api_key");
+      apiKeyInput.value = window.localStorage.getItem("growcontrol_api_key") || "";
+      apiKeyInput.addEventListener("change", () => {
+        window.localStorage.setItem("growcontrol_api_key", apiKeyInput.value.trim());
+        if (writeLocked) updateAuthNotice();
+      });
+
+      restoreChartTimezoneUI();
+      document.getElementById("chart_timezone_select").addEventListener("change", () => {
+        const sel = document.getElementById("chart_timezone_select");
+        const row = document.getElementById("chart_timezone_custom_row");
+        const inp = document.getElementById("chart_timezone_custom");
+        if (sel.value === "__custom") row.style.display = "flex";
+        else row.style.display = "none";
+        persistChartTimezoneFromUI();
+      });
+      document.getElementById("chart_timezone_custom").addEventListener("input", () => {
+        if (document.getElementById("chart_timezone_select").value !== "__custom") return;
+        persistChartTimezoneFromUI();
+      });
+
+      document.getElementById("scan_btn").addEventListener("click", async () => {
+        showMessage("Scanning BLE devices...", false);
+        const data = await apiRequest("/api/scan", "POST", { timeout: 20 });
+        lastScanDevices = data.devices || [];
+        renderScanOptions();
+        showMessage(`Found ${lastScanDevices.length} devices.`, false);
+      });
+      document.getElementById("show_all_devices").addEventListener("change", renderScanOptions);
+      document.getElementById("scan_select").addEventListener("change", () => {
+        document.getElementById("sensor_mac").value = document.getElementById("scan_select").value || "";
+      });
+
+      document.getElementById("verify_btn").addEventListener("click", async () => {
+        const mac = document.getElementById("sensor_mac").value.trim();
+        const verifyResult = document.getElementById("verify_result");
+        verifyResult.textContent = "Verifying sensor...";
+        const data = await apiRequest("/api/verify", "POST", { mac, timeout: 20 });
+        const probe = data.probe || {};
+        if (!document.getElementById("sensor_name").value.trim() && probe.device_name) {
+          document.getElementById("sensor_name").value = probe.device_name;
+        }
+        verifyResult.textContent = `OK: ${data.mac} | name=${probe.device_name || "-"} | firmware=${probe.firmware || "-"} | battery=${probe.battery ?? "-"}%`;
+      });
+
+      document.getElementById("add_btn").addEventListener("click", async () => {
+        const payload = {
+          id: document.getElementById("sensor_id").value.trim(),
+          name: document.getElementById("sensor_name").value.trim(),
+          mac: document.getElementById("sensor_mac").value.trim(),
+          restart: false,
+        };
+        await apiRequest("/api/sensors", "POST", payload);
+        showMessage(`Added sensor ${payload.id}`, false);
+        await refresh();
+      });
+
+      document.getElementById("save_retention_btn").addEventListener("click", async () => {
+        const retention_key = document.getElementById("retention_select").value;
+        await apiRequest("/api/settings/retention", "POST", { retention_key });
+        const msg = document.getElementById("storage_message");
+        msg.style.color = "#116329";
+        msg.textContent = `Saved retention: ${retention_key}`;
+      });
+
+      document.getElementById("clear_data_btn").addEventListener("click", async () => {
+        if (!window.confirm("Are you sure you want to delete all historical data?")) return;
+        const typed = window.prompt("Type DELETE_ALL_DATA to confirm:");
+        if (typed !== "DELETE_ALL_DATA") return;
+        await apiRequest("/api/data/clear", "POST", { are_you_sure: true, confirm_text: typed });
+        const msg = document.getElementById("storage_message");
+        msg.style.color = "#116329";
+        msg.textContent = "All historical data deleted.";
+      });
+
+      document.getElementById("save_weather_btn").addEventListener("click", async () => {
+        const msg = document.getElementById("weather_message");
+        try {
+          const payload = {
+            weather_enabled: Boolean(document.getElementById("weather_enabled").checked),
+            weather_lat: Number(document.getElementById("weather_lat").value),
+            weather_lon: Number(document.getElementById("weather_lon").value),
+            weather_units: document.getElementById("weather_units").value,
+            openweather_api_key: (document.getElementById("openweather_api_key").value || "").trim(),
+          };
+          await apiRequest("/api/settings/weather", "POST", payload);
+          msg.style.color = "#116329";
+          msg.textContent = "Saved weather settings. It may take up to one poll cycle to update the dashboard.";
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
+
+      try {
+        // Auth probe: determine if instance requires an API key for write operations.
+        const health = await apiRequest("/api/health");
+        const apiKey = (window.localStorage.getItem("growcontrol_api_key") || "").trim();
+        writeLocked = Boolean(health.requires_api_key) && !apiKey;
+      } catch (_) {}
+      updateAuthNotice();
+      document.querySelectorAll("#scan_btn,#verify_btn,#add_btn,#save_retention_btn,#clear_data_btn,#save_weather_btn").forEach((el) => el.setAttribute("data-write", "1"));
+
+      document.getElementById("save_polling_btn").addEventListener("click", async () => {
+        const msg = document.getElementById("polling_message");
+        try {
+          const minutes = Number(document.getElementById("sensor_poll_minutes").value);
+          if (!Number.isFinite(minutes) || minutes < 5 || minutes > 1440) {
+            throw new Error("Please choose minutes in range 5..1440");
+          }
+          const parallelism = Number(document.getElementById("sensor_parallelism").value);
+          if (!Number.isFinite(parallelism) || parallelism < 1 || parallelism > 6) {
+            throw new Error("Please choose sensor parallelism in range 1..6");
+          }
+          const data = await apiRequest("/api/settings/polling", "POST", {
+            sensor_poll_minutes: Math.floor(minutes),
+            sensor_parallelism: Math.floor(parallelism),
+          });
+          msg.style.color = "#116329";
+          msg.textContent = `Saved. Poll interval: ${data.sensor_poll_minutes} minutes. Parallelism: ${data.sensor_parallelism}.`;
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
+
+      await refresh();
+
+      // Deep-link support from Dashboard: Options.html#sensor-<id>
+      const hash = (window.location.hash || "").trim();
+      if (hash && hash.startsWith("#sensor-")) {
+        const el = document.getElementById(hash.slice(1));
+        if (el) {
+          el.classList.add("highlight");
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          window.setTimeout(() => el.classList.remove("highlight"), 2500);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

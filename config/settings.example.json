@@ -1,0 +1,18 @@
+{
+  "output_dir": "/var/www/html/growcontrol",
+  "status_file": "status.json",
+  "weather_file": "weatherdata",
+  "weather_enabled": false,
+  "openweather_api_key": "",
+  "sensor_history_limit": 10,
+  "sensor_poll_minutes": 60,
+  "sensor_parallelism": 2,
+  "weather_poll_minutes": 15,
+  "weather_lat": 0,
+  "weather_lon": 0,
+  "weather_units": "metric",
+  "request_timeout_seconds": 20,
+  "loop_sleep_seconds": 5,
+  "log_file": "logs/growcontrol.log",
+  "database_path": "data/growcontrol.db"
+}
