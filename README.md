@@ -15,13 +15,16 @@ Growcontrol turns a Raspberry Pi into a simple, local “plant monitor”: it po
 - **Optional MJPEG webcams**: attach one or more streams to sensors for live viewing
 - **Built-in version + updater check**: the Dashboard footer shows version and whether updates are available (check-only; no auto-update)
 
-## Screenshots / Demo
+## Screenshots
 
-Insert images/GIFs here:
+- **Dashboard overview**
 
-- **Dashboard view**: `docs/images/dashboard.png` *(placeholder)*
-- **Hardware setup** (Pi + sensors): `docs/images/hardware.jpg` *(placeholder)*
-- **Live monitoring / webcam**: `docs/images/webcam.gif` *(placeholder)*
+![Dashboard overview](docs/images/dashboard-overview.png)
+
+- **Analytics view**
+
+![Analytics view](docs/images/dashboard-analytics.png)
+
 
 ## Quick Start
 
