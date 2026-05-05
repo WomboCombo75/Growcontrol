@@ -30,10 +30,15 @@ Growcontrol turns a Raspberry Pi into a simple, local “plant monitor”: it po
 
 ### Prerequisites
 
+- Raspberry Pi **3 or better** (recommended)
 - Raspberry Pi OS / Debian-based Linux with `apt-get`
 - Bluetooth enabled on the Pi (built-in Pi BT is fine)
-- Supported BLE plant sensors (e.g. Xiaomi MiFlora / HHCC)
+- Supported BLE plant sensors: **Xiaomi HHCC Mi Flower Care Sensor** (MiFlora)
 - Network access (for installation + optional weather)
+
+### Optional hardware
+
+- **USB webcam** (or Pi camera via mjpg-streamer) for live MJPEG streams in the Dashboard
 
 ### Install (one command)
 
