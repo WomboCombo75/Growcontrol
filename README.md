@@ -1,174 +1,104 @@
 # Growcontrol
 
-**Growcontrol** runs on a Raspberry Pi (or similar Debian-based Linux box with Bluetooth), talks to **Xiaomi MiFlora / HHCC** plant sensors over **BLE**, and serves a **local web dashboard** for live readings, history charts, optional **OpenWeather** context, and **browser-based onboarding** (scan, verify, add sensors).
+**Local plant monitoring dashboard for Raspberry Pi + Bluetooth plant sensors — track multiple values over time with charts, no cloud required.**
 
-No cloud account is required for core operation: data stays on your machine and LAN.
+## What it does
 
----
+Growcontrol turns a Raspberry Pi into a simple, local “plant monitor”: it polls BLE plant sensors, stores history, and shows an easy dashboard from your phone or PC. Everything stays on your LAN—built to monitor multiple plant values without cloud accounts.
 
-## What you get
+## Key Features
 
-| Feature | Description |
-|--------|-------------|
-| **Collector** | `systemd` service polls sensors on a schedule, writes SQLite history and live JSON for the UI. |
-| **Web UI** | Dashboard (overview, charts, weather) and Options (sensors, retention, polling, weather, API key). |
-| **REST API** | Local HTTP API behind nginx (`/growcontrol-api/`) for the UI and CLI. |
-| **CLI** | `growcontrol` command for scans, add/remove/edit sensors, and `doctor` diagnostics. |
-| **Storage** | SQLite time-series (`data/growcontrol.db`) with configurable retention; short rolling text blocks per sensor under the web docroot. |
+- **See trends, not just numbers**: moisture, temperature, light and EC history charts
+- **Know what needs attention**: quickly spot stale or erroring sensors
+- **Fast onboarding in the browser**: scan → verify → add sensors
+- **Optional weather context**: temperature / humidity / condition from OpenWeather
+- **Optional MJPEG webcams**: attach one or more streams to sensors for live viewing
+- **Built-in version + updater check**: the Dashboard footer shows version and whether updates are available (check-only; no auto-update)
 
----
+## Screenshots / Demo
 
-## Notes (v2.1.5)
+Insert images/GIFs here:
 
-- **Webcam streams (MJPEG)**: configure one or more streams in **Options → Webcam** and map them to sensors (or leave sensors empty to show on all). The Dashboard Analytics view can display the mapped stream(s).
-- **mjpg-streamer recommendation**: use the updated fork at [`WomboCombo75/new-mjpg-streamer`](https://github.com/WomboCombo75/new-mjpg-streamer) (build the `mjpg-streamer-experimental` folder).
-- **Version + updater**: the Dashboard shows a small **version** footer and a daily **update check** (fetch-only; no automatic updates).
+- **Dashboard view**: `docs/images/dashboard.png` *(placeholder)*
+- **Hardware setup** (Pi + sensors): `docs/images/hardware.jpg` *(placeholder)*
+- **Live monitoring / webcam**: `docs/images/webcam.gif` *(placeholder)*
 
----
+## Quick Start
 
-## Requirements
+### Prerequisites
 
-- **OS:** Raspberry Pi OS or Debian-based Linux with `apt-get`.
-- **Hardware:** Bluetooth adapter (built-in Pi BT is fine) in range of MiFlora-style sensors.
-- **User:** Run the installer as the same Linux user that should own the services (usually **`pi`**). That user is added to the **`bluetooth`** group; **log out and back in** (or reboot) once if BLE permission errors appear.
-- **Network:** Optional; only needed for `git clone` / `curl` during install and for OpenWeather if you enable it.
+- Raspberry Pi OS / Debian-based Linux with `apt-get`
+- Bluetooth enabled on the Pi (built-in Pi BT is fine)
+- Supported BLE plant sensors (e.g. Xiaomi MiFlora / HHCC)
+- Network access (for installation + optional weather)
 
----
+### Install (one command)
 
-## Install 
-
-Run as your normal login user (example **`pi`**), **not** a root-only SSH session:
+Run as your normal login user (usually `pi`):
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/WomboCombo75/Growcontrol/main/install.sh | bash
 ```
 
-This script:
-
-1. Installs **`git`** and **`curl`** if needed (via `sudo`).
-2. **Clones** (or updates) the repo into **`$HOME/Growcontrol`** by default.
-3. Runs **`install_phase1.sh`**, which installs Python/nginx/BlueZ dependencies, creates **`.venv`**, deploys the **web UI** to **`/var/www/html/growcontrol`**, installs **systemd** units, configures **nginx** for **`/growcontrol-api/`**, enables services, and starts them.
-
 When it finishes, open:
 
 **`http://<your-pi-ip>/growcontrol/Dashboard.html`**
 
-(Use `hostname -I` on the Pi to see addresses.)
+Tip: run `hostname -I` on the Pi to see its LAN IP.
 
-### Optional environment variables
-
-| Variable | Meaning |
-|----------|---------|
-| `GROWCONTROL_DIR` | Install path (default: `$HOME/Growcontrol`). |
-| `GROWCONTROL_BRANCH` | Git branch (default: `main`). |
-| `GROWCONTROL_REPO` | Git clone URL (default: this repo). Only change this if you install from **your own fork** on GitHub. |
-| `GROWCONTROL_SKIP_SYSTEM` | Set to `1` to only clone/update and **not** run apt/systemd (for developers). |
-
-### If you prefer `git clone` first
-
-Same result as the one-liner:
+### Start / restart
 
 ```bash
-git clone https://github.com/WomboCombo75/Growcontrol.git
-cd Growcontrol
-./install_phase1.sh
+sudo systemctl restart growcontrol-collector.service growcontrol-webapi.service
 ```
 
-(You can also run **`./install.sh`** from that directory: it updates the clone and then runs the full installer.)
+### MJPEG webcam recommendation
 
----
+For the best MJPEG experience, use the updated mjpg-streamer fork:
+[`WomboCombo75/new-mjpg-streamer`](https://github.com/WomboCombo75/new-mjpg-streamer)
 
-## How it works
+Build the `mjpg-streamer-experimental` folder, then set the install directory in **Options → Webcam**.
 
-1. **`growcontrol-collector.service`** runs `growcontrol_collector.py` in a loop: aligned sensor cycles, bounded parallel BLE reads, optional weather fetch, writes **`status.json`**, per-sensor **`Sensor_*`** files, **`weatherdata`**, and appends rows to **SQLite**.
-2. **`growcontrol-webapi.service`** runs `growcontrol_webapi.py` on **127.0.0.1:8788** (by default): sensors CRUD, BLE scan/verify, history API, settings.
-3. **nginx** serves static files from **`/var/www/html/growcontrol/`** and reverse-proxies **`/growcontrol-api/`** to the web API.
-4. The **browser** loads HTML/JS from nginx and calls the API with optional **`X-API-Key`** when you configure one.
+## Example Use Case
 
-```text
-[ MiFlora BLE ] → collector → SQLite (history) + status.json / Sensor_* (live)
-                                    ↓
-[ Browser ] ← nginx (static + /growcontrol-api/) ← web API
-```
+1. You place a Raspberry Pi in your grow tent and add a MiFlora sensor to each pot.
+2. Growcontrol logs moisture + temperature over time and shows trends.
+3. Temperature rises unusually fast → you notice it immediately on the dashboard trend.
+4. You turn on a fan (or trigger your own automation) → temperature stabilizes.
+5. Humidity drops after ventilation → you confirm the effect in the weather/metrics view.
+6. You open the attached MJPEG stream to visually verify plant posture and substrate.
 
----
+*(Roadmap placeholder: add actual notifications/actuation integrations.)*
 
-## Project layout (after clone)
+## Who is this for?
 
-| Path | Role |
-|------|------|
-| `growcontrol_collector.py` | BLE + weather loop, writes DB and docroot files. |
-| `growcontrol_webapi.py` | HTTP API for UI and CLI. |
-| `growcontrol_cli.py` / `growcontrol` | Command-line helper. |
-| `growcontrol_storage.py` | SQLite schema, inserts, retention. |
-| `config/settings.json` | Polling, paths, weather coordinates, etc. |
-| `config/sensors.json` | Sensor registry (id, name, MAC, `output_file`). |
-| `web/*.html` | Dashboard, Options, redirect stub. |
-| `deploy/*.service`, `deploy/nginx-*.conf` | Templates copied/adapted by `install_phase1.sh`. |
-| `data/growcontrol.db` | Created at runtime: historical sensor + weather readings. |
-| `logs/growcontrol.log` | Collector log file (path from settings). |
-| `legacy/` | Old PHP rotation helpers and optional **mjpg-streamer** tree (not used by the current stack). |
+- **Hobby growers** who want to monitor multiple plant values locally (no cloud)
+- **Raspberry Pi users** who prefer simple, local-first dashboards
+- **IoT / DIY enthusiasts** who want a focused tool for plant monitoring
 
----
+## Why this instead of Home Assistant?
 
-## Where data is stored
+Home Assistant is great for a whole smart home, but it can be heavy if you only want plant monitoring.
 
-| Data | Location |
-|------|----------|
-| **History** (charts, retention) | `database_path` in `config/settings.json` — default **`data/growcontrol.db`** under the project directory (e.g. `~/Growcontrol/data/`). |
-| **Live status** for the UI | `output_dir` + `status_file` — default **`/var/www/html/growcontrol/status.json`**. |
-| **Per-sensor text blocks** (short rolling log) | `output_dir` + each sensor’s **`output_file`** (e.g. **`Sensor_1`**). |
-| **Weather JSON snapshot** | `output_dir` + **`weatherdata`**. |
+- **Growcontrol**: focused, quick to install, purpose-built UI for plant sensors + charts
+- **Home Assistant**: broader ecosystem + integrations, more setup/maintenance overhead
 
----
+If you already run Home Assistant, Growcontrol can still be useful as a dedicated “plant dashboard.”
 
-## Configuration highlights
+## Project Status
 
-- **Templates in git:** **`config/settings.example.json`** and **`config/sensors.example.json`**. On first install, **`install_phase1.sh`** copies them to **`config/settings.json`** and **`config/sensors.json`** if those files do not exist yet. The real JSON files are **gitignored** so your MAC addresses, API keys, and coordinates are never pushed.
-- **`config/settings.json`** (local) — `sensor_poll_minutes`, `sensor_parallelism`, `output_dir`, `database_path`, OpenWeather fields, etc.
-- **`.env`** — optional `OPENWEATHER_API_KEY`, `GROWCONTROL_API_KEY`, overrides. Created from **`.env.example`** on first install if missing (also gitignored once created if you add `.env` — already ignored).
-- **Optional write lock** — if `GROWCONTROL_API_KEY` is set, write operations from the API require the same value in the **`X-API-Key`** header; the Options page stores a copy in **browser `localStorage`** for convenience.
-
-Weather: enable in **`config/settings.json`**, set coordinates and units, and provide an API key in **`.env`** or settings (see Options UI).
-
----
+- **Status**: actively developed (works for real setups; still evolving)
+- **Roadmap (placeholder)**:
+  - Notifications (Telegram/email) for “too dry / stale / error”
+  - Actuation hooks (fan/humidifier) via GPIO / MQTT
+  - More sensor types and calibration tools
 
 ## Updating
 
-- **HTML/CSS/JS only:** from the project directory run **`./deploy_web.sh`** (safe rsync: excludes `status.json`, `weatherdata`, `Sensor_*` on the server).
-- **Full code update:** run the **curl installer again**; it resets the clone to **`origin/main`** (or your `GROWCONTROL_BRANCH`). Local uncommitted changes in the install directory can be overwritten—use a manual `git pull` workflow if you develop in-place.
+- **UI only:** `./deploy_web.sh`
+- **Full update:** run the installer again (or `git pull` if you manage updates manually)
 
----
-
-## CLI quick reference
-
-```bash
-growcontrol doctor [--strict]
-growcontrol add-sensor --scan
-growcontrol add-sensor --id plant_1 --name "My Plant" --mac AA:BB:CC:DD:EE:FF [--restart-service]
-growcontrol list-sensors
-growcontrol edit-sensor --id plant_1 --name "Tomato" --enabled [--restart-service]
-growcontrol remove-sensor --id plant_1 [--restart-service]
-```
-
-Manual MAC discovery (if needed): `sudo hcitool lescan`
-
----
-
-## Web onboarding
-
-1. Open **`http://<pi-ip>/growcontrol/Dashboard.html`**
-2. Go to **Options**
-3. **Scan BLE Devices** → pick a device → **Verify Sensor** (recommended)
-4. Enter **Sensor ID** and **Name** → **Add Sensor**
-
-You can also tune retention, polling, parallelism, and weather from Options.
-
-**Dashboard display → Chart time zone** uses **IANA** zones (stored in the browser) so chart labels match your local time.
-
----
-
-## Troubleshooting
+## Troubleshooting (quick)
 
 ```bash
 sudo systemctl status nginx growcontrol-collector.service growcontrol-webapi.service
@@ -177,16 +107,6 @@ journalctl -u growcontrol-webapi.service -f
 sudo nginx -t
 ```
 
-- **BLE permission denied:** ensure the service user is in group **`bluetooth`** and re-login after `install_phase1.sh`.
-- **404 on Dashboard:** confirm **`/var/www/html/growcontrol/`** exists and nginx default site serves **`/var/www/html/`**.
-- **API 401:** set the API key in Options / `.env` to match `GROWCONTROL_API_KEY`.
+## Suggested GitHub topics
 
----
-
-## Security note
-
-Treat the Pi and your LAN as the trust boundary. The default API is bound to **localhost** and reached through nginx; restrict access at the network layer if exposing the Pi beyond your home.
-
----
-
-
+`grow-automation` `raspberry-pi` `iot` `home-automation` `environment-monitoring`
