@@ -1,0 +1,11 @@
+[Unit]
+Description=Growcontrol update check (git fetch)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pi
+WorkingDirectory=/home/pi/Growcontrol
+ExecStart=/bin/bash /home/pi/Growcontrol/scripts/check_git_updates.sh
+

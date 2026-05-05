@@ -14,5 +14,10 @@
   "request_timeout_seconds": 20,
   "loop_sleep_seconds": 5,
   "log_file": "logs/growcontrol.log",
-  "database_path": "data/growcontrol.db"
+  "database_path": "data/growcontrol.db",
+  "webcam_streams": [],
+  "mjpg_streamer": {
+    "mjpg_streamer_root": "",
+    "args": ["-i", "input_uvc.so", "-o", "output_http.so -w www -p {port}"]
+  }
 }

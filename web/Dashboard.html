@@ -8,14 +8,30 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     body {
       font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       margin: 0;
       background: radial-gradient(1200px 600px at 20% 0%, #eaf2ff 0%, #f4f6f8 55%, #f4f6f8 100%);
       color: #0f172a;
     }
-    .container { max-width: 1100px; margin: 0 auto; padding: 18px; display: grid; gap: 16px; }
-    .card { background: rgba(255,255,255,0.92); border: 1px solid #d0d7de; border-radius: 12px; padding: 16px; backdrop-filter: blur(4px); }
+    .container {
+      width: 100%;
+      max-width: min(1400px, 100%);
+      margin: 0 auto;
+      padding: clamp(12px, 2.2vw, 36px);
+      display: grid;
+      gap: 16px;
+    }
+    .card {
+      background: rgba(255,255,255,0.92);
+      border: 1px solid #d0d7de;
+      border-radius: 12px;
+      padding: clamp(14px, 2vw, 22px);
+      backdrop-filter: blur(4px);
+      width: 100%;
+      min-width: 0;
+    }
     .topbar {
       display:flex; justify-content:space-between; align-items:center; gap:12px;
       background: linear-gradient(90deg, rgba(9,105,218,0.10), rgba(130,80,223,0.10));
@@ -27,13 +43,43 @@
     h2 { margin: 0 0 10px 0; }
     table { width: 100%; border-collapse: collapse; }
     th, td { text-align: left; border-bottom: 1px solid #d8dee4; padding: 8px; font-size: 14px; }
+    /* Tight key/value tables (Overview, Weather): no full-bleed stretch between columns */
+    table.kv-table {
+      width: auto;
+      max-width: min(36rem, 100%);
+      table-layout: auto;
+    }
+    table.kv-table th {
+      color: #57606a;
+      font-weight: 600;
+      padding-right: 1.5rem;
+      white-space: nowrap;
+      vertical-align: top;
+    }
+    table.kv-table td {
+      text-align: right;
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
     .status-pill { display:inline-block; border-radius:999px; padding:2px 10px; font-size:12px; font-weight:700; text-transform:uppercase; }
     .status-ok { background:#dafbe1; color:#116329; }
     .status-error { background:#ffebe9; color:#b42318; }
     .status-unknown { background:#f6f8fa; color:#57606a; }
     .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-    .controls { display:grid; gap:10px; max-width:560px; }
-    canvas { max-height: 260px; }
+    .controls { display: grid; gap: 10px; max-width: min(560px, 100%); }
+    .analytics-controls-wrap { max-width: min(420px, 100%); }
+    canvas {
+      width: 100% !important;
+      max-width: 100%;
+      max-height: min(38vh, 280px);
+      display: block;
+    }
+    @media (min-width: 900px) {
+      canvas { max-height: min(48vh, 400px); }
+    }
+    @media (min-width: 1400px) {
+      canvas { max-height: min(52vh, 520px); }
+    }
     .empty { color:#57606a; font-style:italic; }
     .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
     .chip { border:1px solid #d0d7de; background:#fff; padding:6px 10px; border-radius:999px; cursor:pointer; font-size:13px; }
@@ -47,7 +93,72 @@
     .btn { border:1px solid #d0d7de; background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; }
     .btn.primary { background:#0969da; color:#fff; border-color:#0969da; }
     .btn:disabled { opacity: 0.55; cursor: not-allowed; }
-    .analytics-grid { display:grid; grid-template-columns: 1fr; gap: 14px; }
+    .analytics-grid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+    @media (min-width: 960px) {
+      .analytics-grid { grid-template-columns: minmax(220px, 320px) minmax(0, 1fr); }
+    }
+    .analytics-main-column { display: flex; flex-direction: column; gap: 16px; min-width: 0; width: 100%; }
+    #watering_forecast {
+      max-width: min(52rem, 100%);
+      line-height: 1.45;
+    }
+    .analytics-charts-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; }
+    #analytics_webcam_holder {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+      min-width: 0;
+      margin-top: 4px;
+    }
+    #analytics_webcam_holder .webcam-frame {
+      border-radius: 16px;
+      padding: 0;
+      overflow: hidden;
+      background: linear-gradient(145deg, rgba(255,255,255,0.95) 0%, rgba(241,246,255,0.98) 100%);
+      border: 1px solid rgba(9, 105, 218, 0.18);
+      box-shadow: 0 4px 6px rgba(15, 23, 42, 0.04), 0 12px 28px rgba(9, 105, 218, 0.08);
+    }
+    #analytics_webcam_holder .webcam-frame-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(90deg, rgba(9,105,218,0.08), rgba(130,80,223,0.06));
+      border-bottom: 1px solid rgba(208, 215, 222, 0.8);
+    }
+    #analytics_webcam_holder .webcam-frame-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      color: #0f172a;
+    }
+    #analytics_webcam_holder .webcam-live-pill {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #fff;
+      background: linear-gradient(90deg, #0969da, #8250df);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    #analytics_webcam_holder .webcam-frame-body { padding: 10px; background: #0a0f1a; }
+    #analytics_webcam_holder img {
+      display: block;
+      width: 100%;
+      max-height: min(65vh, 720px);
+      object-fit: contain;
+      border-radius: 10px;
+      background: #000;
+    }
+    @media (max-width: 600px) {
+      #analytics_webcam_holder img { max-height: min(50vh, 480px); }
+    }
+    #analytics_webcam_holder .webcam-hint { font-size: 13px; color: #57606a; margin: 0; padding: 0 4px; line-height: 1.45; }
+    #analytics_webcam_holder .webcam-err { font-size: 13px; color: #b42318; margin: 0; padding: 8px 12px; line-height: 1.45; background: #fff5f5; border-radius: 10px; border: 1px solid #ffd1cc; }
     .tiles { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
     .tile { background: rgba(255,255,255,0.92); border:1px solid #d0d7de; border-radius:14px; padding:12px; }
     .tile .name { font-weight: 900; letter-spacing: 0.2px; }
@@ -58,8 +169,7 @@
     .muted-link { color:#57606a; text-decoration:none; }
     .muted-link:hover { text-decoration:underline; }
     @media (max-width: 780px) {
-      .container { padding: 12px; }
-      canvas { max-height: 220px; }
+      .container { padding: clamp(10px, 3vw, 16px); }
     }
   </style>
 </head>
@@ -77,26 +187,19 @@
 
     <div class="card">
       <h2>Overview</h2>
-      <table id="overview_table">
+      <table id="overview_table" class="kv-table">
         <tr><th>Field</th><th>Value</th></tr>
         <tr><td>Service</td><td><span id="service_status" class="status-pill status-unknown">unknown</span></td></tr>
         <tr><td>Last update</td><td id="updated_at">-</td></tr>
         <tr><td>Sensors</td><td id="overview_sensors">-</td></tr>
         <tr><td>Attention</td><td id="overview_attention">-</td></tr>
       </table>
-      <div class="empty" id="overview_hint" style="margin-top:8px;"></div>
+      <div class="empty" id="overview_hint" style="display:none;"></div>
     </div>
 
     <div class="card">
       <h2>Sensors</h2>
       <div class="controls">
-        <label for="sensors_view_mode">View mode</label>
-        <select id="sensors_view_mode">
-          <option value="single" selected>Single view</option>
-          <option value="list">List view</option>
-          <option value="grid">Grid view</option>
-        </select>
-
         <label for="sensors_filter">Filter</label>
         <select id="sensors_filter">
           <option value="all" selected>All</option>
@@ -108,25 +211,14 @@
 
         <label for="sensors_search">Search</label>
         <input id="sensors_search" placeholder="name or id…" />
-
-        <div id="sensors_single_controls" class="controls" style="padding:0;">
-          <label for="sensors_single_select">Sensor</label>
-          <select id="sensors_single_select"><option value="">-- no sensor available --</option></select>
-          <div class="row">
-            <button id="refresh_single_btn" class="btn primary" type="button">Refresh this sensor now</button>
-            <span id="refresh_single_msg" class="empty"></span>
-          </div>
-        </div>
       </div>
 
-      <div id="sensors_single_view" style="margin-top:12px;"></div>
-      <div id="sensors_list_view" style="display:none;margin-top:12px;"></div>
-      <div id="sensors_grid_view" style="display:none;margin-top:12px;"></div>
+      <div id="sensors_grid_view" style="margin-top:12px;"></div>
     </div>
 
     <div class="card">
       <h2>Weather</h2>
-      <table id="weather_table">
+      <table id="weather_table" class="kv-table">
         <tr><th>Field</th><th>Value</th></tr>
         <tr><td>Status</td><td><span id="weather_status" class="status-pill status-unknown">unknown</span></td></tr>
         <tr><td>Temperature</td><td id="weather_temperature">-</td></tr>
@@ -134,15 +226,25 @@
         <tr><td>Condition</td><td id="weather_condition">-</td></tr>
         <tr><td>Last success</td><td id="weather_last_success">-</td></tr>
       </table>
-      <div class="empty" style="margin-top:8px;">Configure in <a href="Options.html">Options</a>.</div>
     </div>
 
     <div class="card">
       <h2>Analytics</h2>
       <div class="analytics-grid">
-        <div class="controls">
+        <div class="controls analytics-controls-wrap">
+          <label for="analytics_view_mode">View mode</label>
+          <select id="analytics_view_mode">
+            <option value="single" selected>Single sensor</option>
+            <option value="compare">Compare sensors</option>
+          </select>
+
           <label for="analytics_sensor_select">Sensor</label>
           <select id="analytics_sensor_select"><option value="">-- no sensor available --</option></select>
+
+          <div id="analytics_compare_row" style="display:none;">
+            <label for="analytics_compare_select">Sensors to compare (Ctrl/Cmd-click)</label>
+            <select id="analytics_compare_select" multiple size="6" style="width:100%;"></select>
+          </div>
 
           <label for="analytics_range_select">Time range</label>
           <select id="analytics_range_select">
@@ -170,23 +272,36 @@
           </div>
         </div>
 
-        <div>
+        <div class="analytics-main-column">
           <p id="watering_forecast" class="empty">Forecast not available yet.</p>
-          <canvas id="moisture_chart"></canvas>
-          <canvas id="temperature_chart"></canvas>
-          <canvas id="ec_moisture_chart"></canvas>
+          <p id="analytics_filter_note" class="empty" style="margin:0 0 6px 0; display:none;"></p>
+          <div class="analytics-charts-stack">
+            <canvas id="moisture_chart"></canvas>
+            <canvas id="temperature_chart"></canvas>
+            <canvas id="ec_moisture_chart"></canvas>
+          </div>
+          <aside id="analytics_webcam_holder" class="analytics-webcam-rail" aria-label="Webcam for selected sensor"></aside>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <div class="container" style="padding-top:0;">
+    <div class="empty" id="footer_version" style="text-align:center; padding: 8px 0 14px 0; font-style: normal;">
+      Growcontrol <span id="footer_version_text">v?</span>
+      <span id="footer_update_text" style="margin-left:10px;"></span>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script>
     const apiBase = "/growcontrol-api";
     let currentSensors = [];
     let activeAnalyticsSensorId = "";
     let activeAnalyticsRange = "7d";
     let customRangeKey = "h12";
+    let analyticsViewMode = "single"; // single | compare
+    let analyticsCompareIds = [];
     let moistureChart = null;
     let temperatureChart = null;
     let ecMoistureChart = null;
@@ -196,6 +311,7 @@
     let sensorsSearch = "";
     /** IANA zone for chart/overview timestamps, or "" for browser locale default */
     let chartTimeZone = "";
+    let webcamStreamsCache = [];
 
     async function apiRequest(path, method = "GET", body = undefined) {
       const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
@@ -258,8 +374,84 @@
     }
 
     function parseNumber(v) {
+      if (v === null || v === undefined) return null;
+      if (typeof v === "string" && !v.trim()) return null;
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
+    }
+
+    function sanitizeOnePointSpikes(readings, specs) {
+      // Returns { sanitizedReadings, stats } where stats[field] = number of nulls inserted.
+      const out = readings.map((r) => ({ ...r }));
+      const stats = {};
+      (specs || []).forEach((spec) => {
+        stats[spec.field] = 0;
+      });
+      if (!Array.isArray(readings) || readings.length < 3) return { sanitizedReadings: out, stats };
+
+      const getVal = (r, field) => {
+        const n = parseNumber(r && r[field]);
+        return n;
+      };
+
+      // First pass: range clamps (turn impossible values into nulls).
+      for (let i = 0; i < out.length; i++) {
+        const r = out[i];
+        (specs || []).forEach((spec) => {
+          const v = getVal(r, spec.field);
+          if (v == null) return;
+          if (spec.min != null && v < spec.min) {
+            r[spec.field] = null;
+            stats[spec.field] += 1;
+          } else if (spec.max != null && v > spec.max) {
+            r[spec.field] = null;
+            stats[spec.field] += 1;
+          }
+        });
+      }
+
+      // Second pass: one-point spike filter (prev and next are close, middle is far).
+      for (let i = 1; i < out.length - 1; i++) {
+        const prev = out[i - 1];
+        const cur = out[i];
+        const next = out[i + 1];
+        (specs || []).forEach((spec) => {
+          const a = getVal(prev, spec.field);
+          const b = getVal(cur, spec.field);
+          const c = getVal(next, spec.field);
+          if (a == null || b == null || c == null) return;
+          const spike = spec.spikeDelta;
+          const stable = spec.stableDelta != null ? spec.stableDelta : spike / 2;
+          if (Math.abs(a - c) <= stable && Math.abs(b - a) >= spike && Math.abs(b - c) >= spike) {
+            cur[spec.field] = null;
+            stats[spec.field] += 1;
+          }
+        });
+      }
+
+      return { sanitizedReadings: out, stats };
+    }
+
+    function renderFilterNote(stats) {
+      const el = document.getElementById("analytics_filter_note");
+      if (!el) return;
+      const entries = Object.entries(stats || {}).filter(([, n]) => Number(n) > 0);
+      if (!entries.length) {
+        el.style.display = "none";
+        el.textContent = "";
+        return;
+      }
+      const labelMap = {
+        moisture: "moisture",
+        temperature: "temp",
+        conductivity: "ec",
+        light: "light",
+      };
+      const bits = entries
+        .map(([k, n]) => `${labelMap[k] || k}: ${n}`)
+        .join(", ");
+      el.style.display = "block";
+      el.textContent = `Filtered ${entries.reduce((a, [, n]) => a + Number(n), 0)} suspicious point(s) (${bits}).`;
     }
 
     function formatWeatherTemp(value) {
@@ -319,12 +511,20 @@
     }
 
     function upsertCharts(readings) {
-      const labels = readings.map((r) => formatIso(r.ts));
-      const moisture = readings.map((r) => parseNumber(r.moisture));
-      const temperature = readings.map((r) => parseNumber(r.temperature));
-      const threshold = readings.map(() => 25);
-      const conductivity = readings.map((r) => parseNumber(r.conductivity));
-      const saltStressMarkers = computeSaltStressMarkers(readings);
+      const { sanitizedReadings, stats } = sanitizeOnePointSpikes(readings, [
+        { field: "moisture", min: 0, max: 100, spikeDelta: 18, stableDelta: 6 },
+        { field: "temperature", min: -10, max: 60, spikeDelta: 10, stableDelta: 3.5 },
+        { field: "conductivity", min: 0, max: 6000, spikeDelta: 250, stableDelta: 90 },
+        { field: "light", min: 0, max: 200000, spikeDelta: 2500, stableDelta: 900 },
+      ]);
+      renderFilterNote(stats);
+
+      const labels = sanitizedReadings.map((r) => formatIso(r.ts));
+      const moisture = sanitizedReadings.map((r) => parseNumber(r.moisture));
+      const temperature = sanitizedReadings.map((r) => parseNumber(r.temperature));
+      const threshold = sanitizedReadings.map(() => 25);
+      const conductivity = sanitizedReadings.map((r) => parseNumber(r.conductivity));
+      const saltStressMarkers = computeSaltStressMarkers(sanitizedReadings);
 
       if (!moistureChart) {
         moistureChart = new Chart(document.getElementById("moisture_chart"), {
@@ -358,6 +558,7 @@
 
       if (!ecMoistureChart) {
         ecMoistureChart = new Chart(document.getElementById("ec_moisture_chart"), {
+          type: "line",
           data: { labels, datasets: [
             { type:"line", label:"Moisture %", data: moisture, borderColor:"#0969da", tension:0.2, spanGaps:true, yAxisID:"y1" },
             { type:"line", label:"Conductivity", data: conductivity, borderColor:"#8250df", tension:0.2, spanGaps:true, yAxisID:"y2" },
@@ -374,11 +575,170 @@
       }
     }
 
+    function paletteColor(i) {
+      const colors = ["#0969da", "#8250df", "#1a7f37", "#d1242f", "#bf8700", "#0550ae", "#7c3aed", "#2da44e"];
+      return colors[i % colors.length];
+    }
+
+    function upsertChartsCompare(seriesBySensor) {
+      const sensorIds = Object.keys(seriesBySensor || {});
+      if (!sensorIds.length) return;
+      const sanitizedSeries = {};
+      const totals = { moisture: 0, temperature: 0, conductivity: 0, light: 0 };
+      sensorIds.forEach((sid) => {
+        const { sanitizedReadings, stats } = sanitizeOnePointSpikes(seriesBySensor[sid] || [], [
+          { field: "moisture", min: 0, max: 100, spikeDelta: 18, stableDelta: 6 },
+          { field: "temperature", min: -10, max: 60, spikeDelta: 10, stableDelta: 3.5 },
+          { field: "conductivity", min: 0, max: 6000, spikeDelta: 250, stableDelta: 90 },
+          { field: "light", min: 0, max: 200000, spikeDelta: 2500, stableDelta: 900 },
+        ]);
+        sanitizedSeries[sid] = sanitizedReadings;
+        Object.keys(totals).forEach((k) => { totals[k] += Number(stats[k] || 0); });
+      });
+      renderFilterNote(totals);
+
+      const base = sanitizedSeries[sensorIds[0]] || [];
+      const labels = base.map((r) => formatIso(r.ts));
+      const threshold = labels.map(() => 25);
+
+      const moistureDatasets = [
+        { label: "Threshold (25%)", data: threshold, borderColor: "#cf222e", borderDash: [6,6], pointRadius: 0, tension: 0 },
+        ...sensorIds.map((sid, i) => ({
+          label: `${sid} moisture %`,
+          data: (sanitizedSeries[sid] || []).map((r) => parseNumber(r.moisture)),
+          borderColor: paletteColor(i),
+          backgroundColor: "rgba(0,0,0,0)",
+          tension: 0.2,
+          spanGaps: true,
+        })),
+      ];
+
+      const tempDatasets = sensorIds.map((sid, i) => ({
+        label: `${sid} temp °C`,
+        data: (sanitizedSeries[sid] || []).map((r) => parseNumber(r.temperature)),
+        borderColor: paletteColor(i),
+        backgroundColor: "rgba(0,0,0,0)",
+        tension: 0.2,
+        spanGaps: true,
+      }));
+
+      const ecDatasets = sensorIds.map((sid, i) => ({
+        label: `${sid} ec`,
+        data: (sanitizedSeries[sid] || []).map((r) => parseNumber(r.conductivity)),
+        borderColor: paletteColor(i),
+        backgroundColor: "rgba(0,0,0,0)",
+        tension: 0.2,
+        spanGaps: true,
+      }));
+
+      if (!moistureChart) {
+        moistureChart = new Chart(document.getElementById("moisture_chart"), {
+          type: "line",
+          data: { labels, datasets: moistureDatasets },
+          options: { responsive: true, plugins: { legend: { display: true } } },
+        });
+      } else {
+        moistureChart.data.labels = labels;
+        moistureChart.data.datasets = moistureDatasets;
+        moistureChart.update();
+      }
+
+      if (!temperatureChart) {
+        temperatureChart = new Chart(document.getElementById("temperature_chart"), {
+          type: "line",
+          data: { labels, datasets: tempDatasets },
+          options: { responsive: true, plugins: { legend: { display: true } } },
+        });
+      } else {
+        temperatureChart.data.labels = labels;
+        temperatureChart.data.datasets = tempDatasets;
+        temperatureChart.update();
+      }
+
+      if (!ecMoistureChart) {
+        ecMoistureChart = new Chart(document.getElementById("ec_moisture_chart"), {
+          type: "line",
+          data: { labels, datasets: ecDatasets },
+          options: { responsive: true, plugins: { legend: { display: true } } },
+        });
+      } else {
+        ecMoistureChart.data.labels = labels;
+        ecMoistureChart.data.datasets = ecDatasets;
+        ecMoistureChart.update();
+      }
+    }
+
+    function streamMatchesSensor(st, sensorId) {
+      const sid = String(sensorId);
+      const ids = Array.isArray(st.sensor_ids) ? st.sensor_ids.map(String) : [];
+      if (!ids.length) return true;
+      return ids.includes(sid);
+    }
+
+    function renderAnalyticsWebcams(sensorId, webcamsFetchError) {
+      const holder = document.getElementById("analytics_webcam_holder");
+      if (!holder) return;
+      holder.innerHTML = "";
+      if (webcamsFetchError) {
+        const err = document.createElement("p");
+        err.className = "webcam-err";
+        err.textContent = `Could not load webcam settings: ${webcamsFetchError}. Restart growcontrol-webapi after updating, then hard-refresh this page.`;
+        holder.appendChild(err);
+        return;
+      }
+      if (!sensorId) {
+        return;
+      }
+      const all = Array.isArray(webcamStreamsCache) ? webcamStreamsCache : [];
+      const streams = all.filter((st) => streamMatchesSensor(st, sensorId));
+      if (all.length && !streams.length) {
+        const hint = document.createElement("p");
+        hint.className = "webcam-hint";
+        hint.innerHTML = "Webcam streams are configured, but none include this sensor. Open <a href=\"Options.html\">Options</a> → Webcam (MJPEG) and map this sensor (or leave sensors unselected to attach a stream to all plants).";
+        holder.appendChild(hint);
+        return;
+      }
+      streams.forEach((st) => {
+        const wrap = document.createElement("div");
+        wrap.className = "webcam-frame";
+        const header = document.createElement("div");
+        header.className = "webcam-frame-header";
+        const h = document.createElement("h3");
+        h.textContent = st.label || st.id || "Webcam";
+        const pill = document.createElement("span");
+        pill.className = "webcam-live-pill";
+        pill.textContent = "Live";
+        header.appendChild(h);
+        header.appendChild(pill);
+        const body = document.createElement("div");
+        body.className = "webcam-frame-body";
+        const img = document.createElement("img");
+        img.alt = "";
+        img.referrerPolicy = "no-referrer";
+        img.loading = "eager";
+        img.src = String(st.stream_url || "");
+        img.addEventListener("error", () => {
+          const note = document.createElement("p");
+          note.className = "webcam-hint";
+          note.style.padding = "8px 4px 0";
+          note.textContent = "Image failed to load. Use a URL your browser can reach (often http://<this-pi-ip>:PORT/?action=stream, not localhost from another device).";
+          body.appendChild(note);
+        }, { once: true });
+        body.appendChild(img);
+        wrap.appendChild(header);
+        wrap.appendChild(body);
+        holder.appendChild(wrap);
+      });
+    }
+
     function updateAnalyticsSensorSelect() {
       const select = document.getElementById("analytics_sensor_select");
+      const compareSelect = document.getElementById("analytics_compare_select");
       select.innerHTML = "";
+      if (compareSelect) compareSelect.innerHTML = "";
       if (!currentSensors.length) {
         select.innerHTML = '<option value="">-- no sensor available --</option>';
+        if (compareSelect) compareSelect.innerHTML = "";
         activeAnalyticsSensorId = "";
         return;
       }
@@ -387,28 +747,93 @@
         option.value = sensor.id;
         option.textContent = `${sensor.name || sensor.id} (${sensor.id})`;
         select.appendChild(option);
+        if (compareSelect) {
+          const opt2 = document.createElement("option");
+          opt2.value = sensor.id;
+          opt2.textContent = `${sensor.name || sensor.id} (${sensor.id})`;
+          compareSelect.appendChild(opt2);
+        }
       });
       if (!activeAnalyticsSensorId || !currentSensors.some((s) => s.id === activeAnalyticsSensorId)) {
         const saved = (window.localStorage.getItem("growcontrol_analytics_sensor_id") || "").trim();
         activeAnalyticsSensorId = (saved && currentSensors.some((s) => s.id === saved)) ? saved : currentSensors[0].id;
       }
       select.value = activeAnalyticsSensorId;
+
+      if (compareSelect) {
+        let savedIds = [];
+        try { savedIds = JSON.parse(window.localStorage.getItem("growcontrol_analytics_compare_ids") || "[]") || []; } catch (_) { savedIds = []; }
+        const valid = savedIds.filter((id) => currentSensors.some((s) => s.id === id));
+        Array.from(compareSelect.options).forEach((o) => { o.selected = valid.includes(o.value); });
+      }
     }
 
     async function refreshAnalytics() {
       const forecastEl = document.getElementById("watering_forecast");
+      let webcamsErr = "";
+      try {
+        const wc = await apiRequest("/api/settings/webcams");
+        webcamStreamsCache = Array.isArray(wc.webcam_streams) ? wc.webcam_streams : [];
+      } catch (e) {
+        webcamStreamsCache = [];
+        webcamsErr = (e && e.message) ? String(e.message) : "request failed";
+      }
+
+      // Compare sensors: overlay datasets in the same charts.
+      if (analyticsViewMode === "compare") {
+        renderFilterNote({});
+        const compareSel = document.getElementById("analytics_compare_select");
+        const ids = compareSel ? Array.from(compareSel.selectedOptions).map((o) => o.value).filter(Boolean) : [];
+        analyticsCompareIds = ids;
+        window.localStorage.setItem("growcontrol_analytics_compare_ids", JSON.stringify(ids));
+
+        if (!ids.length) {
+          forecastEl.textContent = "Pick at least one sensor to compare.";
+          renderAnalyticsWebcams("", webcamsErr);
+          const holder = document.getElementById("analytics_webcam_holder");
+          if (holder) holder.innerHTML = '<p class="webcam-hint">Webcam is only shown in single-sensor mode.</p>';
+          return;
+        }
+
+        // In compare mode we hide webcam rail (it only makes sense for one sensor).
+        const holder = document.getElementById("analytics_webcam_holder");
+        if (holder) holder.innerHTML = '<p class="webcam-hint">Webcam is only shown in single-sensor mode.</p>';
+
+        try {
+          const results = await Promise.all(ids.map((sid) =>
+            apiRequest(`/api/history?sensor_id=${encodeURIComponent(sid)}&range=${encodeURIComponent(activeAnalyticsRange)}&limit=2000`)
+          ));
+          const seriesBySensor = {};
+          results.forEach((resp, i) => { seriesBySensor[ids[i]] = resp.readings || []; });
+          const first = seriesBySensor[ids[0]] || [];
+          forecastEl.textContent = `Comparing ${ids.length} sensor(s). Forecast shown for ${ids[0]}: ${buildForecast(first, 25)}`;
+          upsertChartsCompare(seriesBySensor);
+        } catch (histErr) {
+          forecastEl.textContent = (histErr && histErr.message) ? String(histErr.message) : String(histErr);
+        }
+        return;
+      }
+
+      // Single sensor mode (existing behavior)
+      renderFilterNote({});
       if (!activeAnalyticsSensorId) {
         forecastEl.textContent = "Forecast not available yet.";
+        renderAnalyticsWebcams("", webcamsErr);
         return;
       }
-      const data = await apiRequest(`/api/history?sensor_id=${encodeURIComponent(activeAnalyticsSensorId)}&range=${encodeURIComponent(activeAnalyticsRange)}&limit=2000`);
-      const readings = data.readings || [];
-      if (!readings.length) {
-        forecastEl.textContent = "No historical data yet for this sensor.";
-        return;
+      renderAnalyticsWebcams(activeAnalyticsSensorId, webcamsErr);
+      try {
+        const data = await apiRequest(`/api/history?sensor_id=${encodeURIComponent(activeAnalyticsSensorId)}&range=${encodeURIComponent(activeAnalyticsRange)}&limit=2000`);
+        const readings = data.readings || [];
+        if (!readings.length) {
+          forecastEl.textContent = "No historical data yet for this sensor.";
+          return;
+        }
+        upsertCharts(readings);
+        forecastEl.textContent = buildForecast(readings, 25);
+      } catch (histErr) {
+        forecastEl.textContent = (histErr && histErr.message) ? String(histErr.message) : String(histErr);
       }
-      upsertCharts(readings);
-      forecastEl.textContent = buildForecast(readings, 25);
     }
 
     function sensorCardHtml(sensorId, s, pollMinutes) {
@@ -480,57 +905,6 @@
         return id.toLowerCase().includes(search) || name.includes(search);
       });
 
-      const singleSelect = document.getElementById("sensors_single_select");
-      singleSelect.innerHTML = "";
-      if (!entries.length) {
-        singleSelect.innerHTML = '<option value="">-- no sensor available --</option>';
-      } else {
-        entries.forEach(([id, s]) => {
-          const opt = document.createElement("option");
-          opt.value = id;
-          opt.textContent = `${(s && s.name) ? s.name : id} (${id})`;
-          singleSelect.appendChild(opt);
-        });
-        const savedSingle = (window.localStorage.getItem("growcontrol_sensors_single_id") || "").trim();
-        if (savedSingle && entries.some(([id]) => id === savedSingle)) {
-          singleSelect.value = savedSingle;
-        } else if (!singleSelect.value) {
-          singleSelect.value = entries[0][0];
-        }
-      }
-
-      const singleId = singleSelect.value;
-      const single = singleId ? (sensors[singleId] || {}) : null;
-      document.getElementById("sensors_single_view").innerHTML =
-        singleId && single ? sensorCardHtml(singleId, single, pollMinutes) : '<div class="empty">No sensors.</div>';
-
-      const listHolder = document.getElementById("sensors_list_view");
-      if (!entries.length) {
-        listHolder.innerHTML = '<div class="empty">No sensors.</div>';
-      } else {
-        listHolder.innerHTML = `
-          <table>
-            <tr><th>Sensor</th><th>Status</th><th>Battery</th><th>Moisture</th><th>Temp</th><th>Last success</th></tr>
-            ${entries.map(([id, s]) => {
-              const st = (s.status || "unknown").toLowerCase();
-              const lastSuccess = s.last_success || null;
-              const battery = (s.last_metrics && typeof s.last_metrics.battery === "number") ? s.last_metrics.battery : null;
-              const m = s.last_metrics || {};
-              return `
-                <tr>
-                  <td><a href="Options.html#sensor-${encodeURIComponent(id)}">${(s.name || id)}</a></td>
-                  <td>${st}</td>
-                  <td>${typeof battery === "number" ? `${battery}%` : "-"}</td>
-                  <td>${m.moisture ?? "-"}</td>
-                  <td>${m.temperature ?? "-"}</td>
-                  <td>${lastSuccess ? formatAge(lastSuccess) : "-"}</td>
-                </tr>
-              `;
-            }).join("")}
-          </table>
-        `;
-      }
-
       const gridHolder = document.getElementById("sensors_grid_view");
       if (!entries.length) {
         gridHolder.innerHTML = '<div class="empty">No sensors.</div>';
@@ -580,9 +954,7 @@
 
         const sensorsText = `configured=${configured}, ok=${okCount}, stale=${staleCount}, error=${errCount}`;
         const attentionText = attentionCount ? `${attentionCount} sensor(s) need attention` : "All good";
-        const hintText = configured
-          ? `Stale uses ~2× polling interval (${pollMinutes}m). Last update: ${formatAge(statusData.updated_at)}.`
-          : "No sensors configured yet (go to Options to onboard).";
+        const hintText = "";
 
         const sensorsEl = document.getElementById("overview_sensors");
         if (sensorsEl) sensorsEl.textContent = sensorsText;
@@ -634,6 +1006,25 @@
       try {
         const health = await apiRequest("/api/health");
         requiresApiKey = Boolean(health.requires_api_key);
+        try {
+          const v = await apiRequest("/api/version");
+          const verText = document.getElementById("footer_version_text");
+          if (verText) verText.textContent = `v${v.version || "unknown"}`;
+          const upd = (v && v.update) ? v.update : {};
+          const updEl = document.getElementById("footer_update_text");
+          if (updEl) {
+            if (upd && upd.update_available === true) {
+              const n = (typeof upd.behind_count === "number") ? upd.behind_count : null;
+              updEl.textContent = n ? `Update available (${n} commit${n === 1 ? "" : "s"} behind).` : "Update available.";
+            } else if (upd && upd.update_available === false) {
+              updEl.textContent = "Up to date.";
+            } else if (upd && upd.checked_at) {
+              updEl.textContent = `Update check: ${String(upd.checked_at)}.`;
+            } else {
+              updEl.textContent = "";
+            }
+          }
+        } catch (_) {}
         const sensorsConfig = await apiRequest("/api/sensors");
         currentSensors = sensorsConfig.sensors || [];
         updateAnalyticsSensorSelect();
@@ -657,6 +1048,20 @@
     document.getElementById("analytics_sensor_select").addEventListener("change", async (e) => {
       activeAnalyticsSensorId = e.target.value;
       window.localStorage.setItem("growcontrol_analytics_sensor_id", activeAnalyticsSensorId);
+      await refreshAnalytics();
+    });
+
+    document.getElementById("analytics_view_mode").addEventListener("change", async (e) => {
+      analyticsViewMode = (e.target.value === "compare") ? "compare" : "single";
+      window.localStorage.setItem("growcontrol_analytics_view_mode", analyticsViewMode);
+      const compareRow = document.getElementById("analytics_compare_row");
+      const singleSel = document.getElementById("analytics_sensor_select");
+      if (compareRow) compareRow.style.display = analyticsViewMode === "compare" ? "block" : "none";
+      if (singleSel) singleSel.style.display = analyticsViewMode === "compare" ? "none" : "block";
+      await refreshAnalytics();
+    });
+
+    document.getElementById("analytics_compare_select").addEventListener("change", async () => {
       await refreshAnalytics();
     });
 
@@ -710,28 +1115,11 @@
       }
     });
 
-    // Sensors view mode toggles
-    const sensorsMode = document.getElementById("sensors_view_mode");
     const sensorsFilterSelect = document.getElementById("sensors_filter");
     const sensorsSearchInput = document.getElementById("sensors_search");
-    const sensorsSingleControls = document.getElementById("sensors_single_controls");
-    const sensorsSingleView = document.getElementById("sensors_single_view");
-    const sensorsListView = document.getElementById("sensors_list_view");
     const sensorsGridView = document.getElementById("sensors_grid_view");
-    const sensorsSingleSelect = document.getElementById("sensors_single_select");
-    const refreshSingleBtn = document.getElementById("refresh_single_btn");
-    const refreshSingleMsg = document.getElementById("refresh_single_msg");
 
-    function setSensorsMode(mode) {
-      window.localStorage.setItem("growcontrol_sensors_view_mode", mode);
-      sensorsSingleControls.style.display = mode === "single" ? "grid" : "none";
-      sensorsSingleView.style.display = mode === "single" ? "block" : "none";
-      sensorsListView.style.display = mode === "list" ? "block" : "none";
-      sensorsGridView.style.display = mode === "grid" ? "block" : "none";
-      if (lastStatusData) renderSensorsViews(lastStatusData);
-    }
-
-    sensorsMode.addEventListener("change", () => setSensorsMode(sensorsMode.value));
+    if (sensorsGridView) sensorsGridView.style.display = "block";
     sensorsFilterSelect.addEventListener("change", () => {
       sensorsFilter = sensorsFilterSelect.value;
       window.localStorage.setItem("growcontrol_sensors_filter", sensorsFilter);
@@ -742,39 +1130,9 @@
       window.localStorage.setItem("growcontrol_sensors_search", sensorsSearch);
       if (lastStatusData) renderSensorsViews(lastStatusData);
     });
-    sensorsSingleSelect.addEventListener("change", () => {
-      window.localStorage.setItem("growcontrol_sensors_single_id", sensorsSingleSelect.value || "");
-      if (lastStatusData) renderSensorsViews(lastStatusData);
-    });
-
-    refreshSingleBtn.addEventListener("click", async () => {
-      refreshSingleMsg.textContent = "";
-      const sensorId = sensorsSingleSelect.value;
-      if (!sensorId) return;
-      const hasKey = Boolean((window.localStorage.getItem("growcontrol_api_key") || "").trim());
-      if (requiresApiKey && !hasKey) {
-        refreshSingleMsg.textContent = "API key required (set it in Options).";
-        return;
-      }
-      refreshSingleBtn.disabled = true;
-      refreshSingleMsg.textContent = "Refreshing…";
-      try {
-        await apiRequest(`/api/sensors/${encodeURIComponent(sensorId)}/refresh`, "POST", { timeout: 25 });
-        refreshSingleMsg.textContent = "Refreshed.";
-        await refresh();
-      } catch (err) {
-        refreshSingleMsg.textContent = String(err);
-      } finally {
-        refreshSingleBtn.disabled = false;
-      }
-    });
-
-    setSensorsMode("single");
 
     // Restore persisted UI state
     try {
-      const savedSensorsMode = window.localStorage.getItem("growcontrol_sensors_view_mode");
-      if (savedSensorsMode) sensorsMode.value = savedSensorsMode;
       sensorsFilter = window.localStorage.getItem("growcontrol_sensors_filter") || "all";
       sensorsFilterSelect.value = sensorsFilter;
       sensorsSearch = window.localStorage.getItem("growcontrol_sensors_search") || "";
@@ -788,10 +1146,19 @@
 
       const savedAnalyticsSensor = window.localStorage.getItem("growcontrol_analytics_sensor_id") || "";
       if (savedAnalyticsSensor) activeAnalyticsSensorId = savedAnalyticsSensor;
+      const savedAnalyticsViewMode = window.localStorage.getItem("growcontrol_analytics_view_mode") || "";
+      if (savedAnalyticsViewMode) analyticsViewMode = savedAnalyticsViewMode;
       syncChartTimeZoneFromStorage();
     } catch (_) {}
 
-    setSensorsMode(sensorsMode.value);
+    try {
+      const vm = document.getElementById("analytics_view_mode");
+      if (vm) vm.value = analyticsViewMode;
+      const compareRow = document.getElementById("analytics_compare_row");
+      const singleSel = document.getElementById("analytics_sensor_select");
+      if (compareRow) compareRow.style.display = analyticsViewMode === "compare" ? "block" : "none";
+      if (singleSel) singleSel.style.display = analyticsViewMode === "compare" ? "none" : "block";
+    } catch (_) {}
 
     refresh();
     setInterval(refresh, 15000);

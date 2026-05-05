@@ -6,12 +6,21 @@
   <title>Growcontrol Options</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 0; background: #f4f6f8; color: #1b1f24; }
-    .container { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
-    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; }
+    *, *::before, *::after { box-sizing: border-box; }
+    .container {
+      width: 100%;
+      max-width: min(1400px, 100%);
+      margin: 0 auto;
+      padding: clamp(12px, 2.2vw, 36px);
+      display: grid;
+      gap: 16px;
+    }
+    .card { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; width: 100%; min-width: 0; }
     .topbar { display:flex; justify-content:space-between; align-items:center; gap:12px; }
     .topbar a { text-decoration:none; border:1px solid #d0d7de; padding:8px 10px; border-radius:8px; color:#1b1f24; background:#fff; }
     .grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
     .controls { display:grid; gap:8px; max-width:520px; }
+    .controls.wc-webcam-card { max-width: min(720px, 100%); }
     .empty { color:#57606a; font-style:italic; }
     .btn { border:1px solid #d0d7de; background:#fff; padding:8px 10px; border-radius:10px; cursor:pointer; }
     .btn.primary { background:#0969da; color:#fff; border-color:#0969da; }
@@ -27,6 +36,31 @@
     .callout { border:1px solid #d0d7de; border-radius:8px; padding:10px 12px; background:#f6f8fa; }
     .callout.err { background:#ffebe9; border-color:#ffd1cc; }
     .highlight { outline: 3px solid #0969da; outline-offset: 2px; }
+    .wc-tip-line { margin: 8px 0 0; font-size: 13px; color: #424a53; line-height: 1.45; font-style: normal; }
+    .wc-stream-box {
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      display: grid;
+      gap: 12px;
+      max-width: 100%;
+      min-width: 0;
+      background: #fff;
+    }
+    .wc-stream-box .wc-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+    .wc-stream-box .wc-field > label { font-weight: 600; font-size: 13px; color: #424a53; }
+    .wc-stream-box .wc-field > input,
+    .wc-stream-box .wc-field > select { width: 100%; min-width: 0; max-width: 100%; }
+    .wc-stream-box .wc-stream-title { font-weight: 700; font-size: 15px; margin: 0; }
+    .wc-start-row { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 4px; border-top: 1px solid #eaeef2; }
+    .wc-mjpeg-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .wc-start-row .wc-start-hint { font-size: 13px; color: #57606a; line-height: 1.4; max-width: 100%; }
+    @media (min-width: 540px) {
+      .wc-start-row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
+      .wc-start-row .wc-start-hint { flex: 1 1 200px; min-width: 0; }
+    }
+    .wc-stream-box .btn.danger { justify-self: start; }
   </style>
 </head>
 <body>
@@ -135,6 +169,31 @@
     </div>
 
     <div class="card">
+      <h2>Webcam (MJPEG)</h2>
+      <div class="controls wc-webcam-card">
+        <div class="callout">
+          <div class="row" style="justify-content:space-between;">
+            <strong>Optional</strong>
+            <span class="pill neutral">mjpg-streamer</span>
+          </div>
+          <p class="wc-tip-line">MJPEG URL: use your Pi’s LAN IP (e.g. <code>http://192.168.x.x:8080/?action=stream</code>), not <code>localhost</code>, so phones/PCs can open the stream.</p>
+          <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Set install path, then <strong>Start</strong> or <strong>Stop MJPEG server</strong> (HTTP port from the URL, default 8080). More: <code>mjpg_streamer</code> in <code>settings.json</code> or <code>GROWCONTROL_MJPG_STREAMER_ROOT</code>.</p>
+        </div>
+        <label for="mjpg_streamer_root">mjpg-streamer install directory</label>
+        <input id="mjpg_streamer_root" type="text" placeholder="/path/to/mjpg-streamer-experimental" style="max-width:100%;" />
+        <div id="mjpg_streamer_status" class="empty" style="margin-top:6px;font-size:13px;"></div>
+        <button id="save_mjpg_streamer_btn" type="button" class="btn" data-write="1">Save MJPEG install path</button>
+        <p class="empty" style="margin:0 0 6px 0;">Streams show in <strong>Dashboard → Analytics</strong> for mapped sensors.</p>
+        <div id="webcam_streams_editor"></div>
+        <div class="row">
+          <button id="webcam_add_stream_btn" class="btn" type="button" data-write="1">Add stream</button>
+          <button id="save_webcams_btn" class="btn primary" type="button" data-write="1">Save webcam streams</button>
+        </div>
+        <div id="webcam_message" class="empty"></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Collector polling</h2>
       <div class="controls">
         <div class="callout">
@@ -202,6 +261,8 @@
     let lastScanDevices = [];
     let writeLocked = false;
     let sensorPollMinutes = 60;
+    let webcamEditRows = [];
+    let lastSensorsForWebcam = [];
 
     async function apiRequest(path, method = "GET", body = undefined) {
       const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
@@ -301,6 +362,218 @@
       if (sel.value === "__custom") tz = (inp.value || "").trim();
       else tz = sel.value || "";
       window.localStorage.setItem("growcontrol_chart_timezone", tz);
+    }
+
+    function inferMjpegPortFromUrl(url) {
+      const s = (url || "").trim();
+      if (!s) return null;
+      try {
+        const u = new URL(s);
+        if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+        if (!u.hostname) return null;
+        if (u.port) {
+          const p = parseInt(u.port, 10);
+          return Number.isFinite(p) && p >= 1 && p <= 65535 ? p : null;
+        }
+        return u.protocol === "https:" ? 443 : 8080;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    function wcStreamField(labelText, control) {
+      const wrap = document.createElement("div");
+      wrap.className = "wc-field";
+      const lab = document.createElement("label");
+      lab.textContent = labelText;
+      wrap.appendChild(lab);
+      wrap.appendChild(control);
+      return wrap;
+    }
+
+    function ensureWebcamStartRow(box, idx) {
+      const urlEl = box.querySelector(".wc-inp-url");
+      const port = inferMjpegPortFromUrl(urlEl ? urlEl.value : "");
+      let row = box.querySelector(".wc-start-row");
+      if (port === null) {
+        if (row) row.remove();
+        return;
+      }
+      if (!row) {
+        row = document.createElement("div");
+        row.className = "wc-start-row";
+        const btnWrap = document.createElement("div");
+        btnWrap.className = "wc-mjpeg-btns";
+
+        const startBtn = document.createElement("button");
+        startBtn.type = "button";
+        startBtn.className = "btn";
+        startBtn.setAttribute("data-write", "1");
+        startBtn.textContent = "Start MJPEG server";
+        startBtn.addEventListener("click", async () => {
+          const msg = document.getElementById("webcam_message");
+          syncWebcamRowsFromDom();
+          const urlNow = (webcamEditRows[idx] && webcamEditRows[idx].stream_url) || "";
+          const p = inferMjpegPortFromUrl(urlNow);
+          if (p === null) {
+            msg.style.color = "#b42318";
+            msg.textContent = "Need a valid http(s) URL with a host (add :PORT or omit port to use 8080 on http).";
+            return;
+          }
+          startBtn.disabled = true;
+          try {
+            const data = await apiRequest("/api/mjpg", "POST", { run: "start", port: p });
+            msg.style.color = "#116329";
+            msg.textContent = data.message || `Started on port ${p}.`;
+          } catch (err) {
+            msg.style.color = "#b42318";
+            msg.textContent = String(err);
+          } finally {
+            startBtn.disabled = false;
+            updateAuthNotice();
+          }
+        });
+
+        const stopBtn = document.createElement("button");
+        stopBtn.type = "button";
+        stopBtn.className = "btn";
+        stopBtn.setAttribute("data-write", "1");
+        stopBtn.textContent = "Stop MJPEG server";
+        stopBtn.addEventListener("click", async () => {
+          const msg = document.getElementById("webcam_message");
+          syncWebcamRowsFromDom();
+          const urlNow = (webcamEditRows[idx] && webcamEditRows[idx].stream_url) || "";
+          const p = inferMjpegPortFromUrl(urlNow);
+          if (p === null) {
+            msg.style.color = "#b42318";
+            msg.textContent = "Need a valid http(s) URL with a host (add :PORT or omit port to use 8080 on http).";
+            return;
+          }
+          stopBtn.disabled = true;
+          try {
+            const data = await apiRequest("/api/mjpg", "POST", { run: "stop", port: p });
+            msg.style.color = "#116329";
+            msg.textContent = data.message || `Stopped on port ${p}.`;
+          } catch (err) {
+            msg.style.color = "#b42318";
+            msg.textContent = String(err);
+          } finally {
+            stopBtn.disabled = false;
+            updateAuthNotice();
+          }
+        });
+
+        btnWrap.appendChild(startBtn);
+        btnWrap.appendChild(stopBtn);
+        const hint = document.createElement("span");
+        hint.className = "wc-start-hint";
+        row.appendChild(btnWrap);
+        row.appendChild(hint);
+        const rm = box.querySelector("button.danger");
+        if (rm && rm.parentNode === box) box.insertBefore(row, rm);
+        else box.appendChild(row);
+      }
+      const hintEl = row.querySelector(".wc-start-hint");
+      if (hintEl) {
+        hintEl.textContent = `Start / stop use TCP port ${port} from this URL (Stop sends SIGTERM via fuser).`;
+      }
+    }
+
+    function renderWebcamStreamsEditor() {
+      const holder = document.getElementById("webcam_streams_editor");
+      if (!holder) return;
+      holder.innerHTML = "";
+      const sensors = lastSensorsForWebcam || [];
+      webcamEditRows.forEach((row, idx) => {
+        const box = document.createElement("div");
+        box.className = "wc-stream-box";
+        box.dataset.wcIndex = String(idx);
+
+        const title = document.createElement("p");
+        title.className = "wc-stream-title";
+        title.textContent = `Stream ${idx + 1}`;
+        box.appendChild(title);
+
+        const inpId = document.createElement("input");
+        inpId.type = "text";
+        inpId.className = "wc-inp-id";
+        inpId.placeholder = "e.g. tent_cam";
+        inpId.value = row.id || "";
+        inpId.addEventListener("input", () => { webcamEditRows[idx].id = inpId.value.trim() || row.id; });
+        box.appendChild(wcStreamField("Internal id (optional)", inpId));
+
+        const inpL = document.createElement("input");
+        inpL.type = "text";
+        inpL.className = "wc-inp-label";
+        inpL.placeholder = "Grow tent";
+        inpL.value = row.label || "";
+        inpL.addEventListener("input", () => { webcamEditRows[idx].label = inpL.value; });
+        box.appendChild(wcStreamField("Label (shown on Dashboard)", inpL));
+
+        const inpU = document.createElement("input");
+        inpU.type = "text";
+        inpU.className = "wc-inp-url";
+        inpU.placeholder = "http://127.0.0.1:8080/?action=stream";
+        inpU.value = row.stream_url || "";
+        inpU.addEventListener("input", () => {
+          webcamEditRows[idx].stream_url = inpU.value;
+          ensureWebcamStartRow(box, idx);
+        });
+        box.appendChild(wcStreamField("Stream URL", inpU));
+
+        const sel = document.createElement("select");
+        sel.className = "wc-sel-sensors";
+        sel.multiple = true;
+        sel.size = Math.min(10, Math.max(3, sensors.length || 3));
+        sel.addEventListener("change", () => {
+          webcamEditRows[idx].sensor_ids = Array.from(sel.selectedOptions).map((o) => o.value);
+        });
+        sensors.forEach((s) => {
+          const id = s.id;
+          if (!id) return;
+          const idStr = String(id);
+          const o = document.createElement("option");
+          o.value = idStr;
+          o.textContent = s.name ? `${s.name} (${idStr})` : idStr;
+          const chosen = (row.sensor_ids || []).map(String);
+          if (chosen.includes(idStr)) o.selected = true;
+          sel.appendChild(o);
+        });
+        box.appendChild(wcStreamField("Sensors (Ctrl/Cmd-click for multiple)", sel));
+
+        const rm = document.createElement("button");
+        rm.type = "button";
+        rm.className = "btn danger";
+        rm.textContent = "Remove this stream";
+        rm.addEventListener("click", () => {
+          webcamEditRows.splice(idx, 1);
+          renderWebcamStreamsEditor();
+        });
+        box.appendChild(rm);
+
+        ensureWebcamStartRow(box, idx);
+        holder.appendChild(box);
+      });
+      updateAuthNotice();
+    }
+
+    function syncWebcamRowsFromDom() {
+      const holder = document.getElementById("webcam_streams_editor");
+      if (!holder) return;
+      holder.querySelectorAll("[data-wc-index]").forEach((box) => {
+        const idx = Number(box.dataset.wcIndex);
+        if (!Number.isFinite(idx) || idx < 0 || idx >= webcamEditRows.length) return;
+        const idEl = box.querySelector(".wc-inp-id");
+        const labelEl = box.querySelector(".wc-inp-label");
+        const urlEl = box.querySelector(".wc-inp-url");
+        const selEl = box.querySelector(".wc-sel-sensors");
+        if (idEl) webcamEditRows[idx].id = (idEl.value || "").trim() || webcamEditRows[idx].id;
+        if (labelEl) webcamEditRows[idx].label = labelEl.value || "";
+        if (urlEl) webcamEditRows[idx].stream_url = urlEl.value || "";
+        if (selEl) {
+          webcamEditRows[idx].sensor_ids = Array.from(selEl.selectedOptions).map((o) => o.value);
+        }
+      });
     }
 
     function renderScanOptions() {
@@ -428,6 +701,35 @@
       } catch (_) {}
 
       const sensorsConfig = await apiRequest("/api/sensors");
+      lastSensorsForWebcam = sensorsConfig.sensors || [];
+      try {
+        const wc = await apiRequest("/api/settings/webcams");
+        webcamEditRows = JSON.parse(JSON.stringify(wc.webcam_streams || []));
+      } catch (_) {
+        webcamEditRows = [];
+      }
+      try {
+        const mj = await apiRequest("/api/settings/mjpg-streamer");
+        const rootInp = document.getElementById("mjpg_streamer_root");
+        const st = document.getElementById("mjpg_streamer_status");
+        if (rootInp) rootInp.value = mj.mjpg_streamer_root_saved || "";
+        if (st) {
+          const dir = mj.resolved_install_dir || "";
+          if (mj.mjpg_streamer_found) {
+            st.style.color = "#116329";
+            st.textContent = `Found mjpg_streamer under ${dir}.`;
+          } else {
+            st.style.color = "#9a6700";
+            st.textContent =
+              `No mjpg_streamer at ${dir}. Set the path above (or GROWCONTROL_MJPG_STREAMER_ROOT for the API service)${mj.mjpg_streamer_root_from_env ? "; env var is set but binary still missing there" : ""}.`;
+          }
+        }
+      } catch (_) {
+        const st = document.getElementById("mjpg_streamer_status");
+        if (st) st.textContent = "";
+      }
+      renderWebcamStreamsEditor();
+
       const retention = await apiRequest("/api/settings/retention");
       if (retention.retention_key) document.getElementById("retention_select").value = retention.retention_key;
 
@@ -557,7 +859,56 @@
         writeLocked = Boolean(health.requires_api_key) && !apiKey;
       } catch (_) {}
       updateAuthNotice();
-      document.querySelectorAll("#scan_btn,#verify_btn,#add_btn,#save_retention_btn,#clear_data_btn,#save_weather_btn").forEach((el) => el.setAttribute("data-write", "1"));
+      document.querySelectorAll("#scan_btn,#verify_btn,#add_btn,#save_retention_btn,#clear_data_btn,#save_weather_btn,#save_webcams_btn,#webcam_add_stream_btn,#save_mjpg_streamer_btn").forEach((el) => el.setAttribute("data-write", "1"));
+
+      document.getElementById("webcam_add_stream_btn").addEventListener("click", () => {
+        webcamEditRows.push({ id: "cam_" + Date.now(), label: "", stream_url: "", sensor_ids: [] });
+        renderWebcamStreamsEditor();
+      });
+
+      document.getElementById("save_mjpg_streamer_btn").addEventListener("click", async () => {
+        const msg = document.getElementById("webcam_message");
+        msg.textContent = "";
+        try {
+          const mjpg_streamer_root = document.getElementById("mjpg_streamer_root").value.trim();
+          const data = await apiRequest("/api/settings/mjpg-streamer", "POST", { mjpg_streamer_root });
+          const st = document.getElementById("mjpg_streamer_status");
+          const dir = data.resolved_install_dir || "";
+          if (data.mjpg_streamer_found) {
+            st.style.color = "#116329";
+            st.textContent = `Saved. Found mjpg_streamer under ${dir}.`;
+            msg.style.color = "#116329";
+            msg.textContent = "MJPEG install path saved.";
+          } else {
+            st.style.color = "#b42318";
+            st.textContent = `Saved path, but no mjpg_streamer at ${dir}. Check the directory.`;
+            msg.style.color = "#b42318";
+            msg.textContent = st.textContent;
+          }
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
+
+      document.getElementById("save_webcams_btn").addEventListener("click", async () => {
+        const msg = document.getElementById("webcam_message");
+        msg.textContent = "";
+        try {
+          syncWebcamRowsFromDom();
+          const payload = webcamEditRows.filter((r) => (r.stream_url || "").trim());
+          const data = await apiRequest("/api/settings/webcams", "POST", { webcam_streams: payload });
+          webcamEditRows = JSON.parse(JSON.stringify(data.webcam_streams || []));
+          renderWebcamStreamsEditor();
+          msg.style.color = "#116329";
+          let t = "Saved webcam streams.";
+          if (data.warnings && data.warnings.length) t += " " + data.warnings.join(" ");
+          msg.textContent = t;
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
 
       document.getElementById("save_polling_btn").addEventListener("click", async () => {
         const msg = document.getElementById("polling_message");

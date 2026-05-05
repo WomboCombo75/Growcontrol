@@ -18,6 +18,14 @@ No cloud account is required for core operation: data stays on your machine and 
 
 ---
 
+## Notes (v2.1.5)
+
+- **Webcam streams (MJPEG)**: configure one or more streams in **Options → Webcam** and map them to sensors (or leave sensors empty to show on all). The Dashboard Analytics view can display the mapped stream(s).
+- **mjpg-streamer recommendation**: use the updated fork at [`WomboCombo75/new-mjpg-streamer`](https://github.com/WomboCombo75/new-mjpg-streamer) (build the `mjpg-streamer-experimental` folder).
+- **Version + updater**: the Dashboard shows a small **version** footer and a daily **update check** (fetch-only; no automatic updates).
+
+---
+
 ## Requirements
 
 - **OS:** Raspberry Pi OS or Debian-based Linux with `apt-get`.

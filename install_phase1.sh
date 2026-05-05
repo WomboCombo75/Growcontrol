@@ -6,6 +6,10 @@ SERVICE_TEMPLATE="$PROJECT_DIR/deploy/growcontrol-collector.service"
 SERVICE_DEST="/etc/systemd/system/growcontrol-collector.service"
 WEBAPI_TEMPLATE="$PROJECT_DIR/deploy/growcontrol-webapi.service"
 WEBAPI_DEST="/etc/systemd/system/growcontrol-webapi.service"
+UPDATE_CHECK_SERVICE_TEMPLATE="$PROJECT_DIR/deploy/growcontrol-update-check.service"
+UPDATE_CHECK_TIMER_TEMPLATE="$PROJECT_DIR/deploy/growcontrol-update-check.timer"
+UPDATE_CHECK_SERVICE_DEST="/etc/systemd/system/growcontrol-update-check.service"
+UPDATE_CHECK_TIMER_DEST="/etc/systemd/system/growcontrol-update-check.timer"
 NGINX_API_TEMPLATE="$PROJECT_DIR/deploy/nginx-growcontrol-api.conf"
 NGINX_API_SNIPPET="/etc/nginx/snippets/growcontrol-api.conf"
 NGINX_DEFAULT_SITE="/etc/nginx/sites-available/default"
@@ -91,6 +95,13 @@ sed \
   -e "s|^User=.*|User=$RUN_USER|g" \
   "$WEBAPI_TEMPLATE" | sudo tee "$WEBAPI_DEST" >/dev/null
 
+# Optional daily git update check (writes update_status.json for the UI footer)
+if [[ -f "$UPDATE_CHECK_SERVICE_TEMPLATE" ]] && [[ -f "$UPDATE_CHECK_TIMER_TEMPLATE" ]]; then
+  sed -e "s|/home/pi/Growcontrol|$PROJECT_DIR|g" -e "s|^User=.*|User=$RUN_USER|g" \
+    "$UPDATE_CHECK_SERVICE_TEMPLATE" | sudo tee "$UPDATE_CHECK_SERVICE_DEST" >/dev/null
+  sudo cp "$UPDATE_CHECK_TIMER_TEMPLATE" "$UPDATE_CHECK_TIMER_DEST"
+fi
+
 if [[ -f "$NGINX_API_TEMPLATE" ]]; then
   sudo cp "$NGINX_API_TEMPLATE" "$NGINX_API_SNIPPET"
   if ! sudo grep -q "include /etc/nginx/snippets/growcontrol-api.conf;" "$NGINX_DEFAULT_SITE"; then
@@ -104,11 +115,17 @@ sudo systemctl daemon-reload
 sudo systemctl enable growcontrol-collector.service
 sudo systemctl enable growcontrol-webapi.service
 sudo systemctl enable nginx
+if [[ -f "$UPDATE_CHECK_TIMER_DEST" ]]; then
+  sudo systemctl enable growcontrol-update-check.timer
+fi
 
 echo "[7/7] Starting services and running health checks"
 sudo systemctl restart nginx
 sudo systemctl restart growcontrol-collector.service
 sudo systemctl restart growcontrol-webapi.service
+if [[ -f "$UPDATE_CHECK_TIMER_DEST" ]]; then
+  sudo systemctl start growcontrol-update-check.timer || true
+fi
 
 if command -v growcontrol >/dev/null 2>&1; then
   growcontrol doctor --strict || true

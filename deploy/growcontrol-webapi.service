@@ -8,6 +8,8 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/Growcontrol
 EnvironmentFile=-/home/pi/Growcontrol/.env
+# If mjpg_streamer was built outside this repo, point the API at that directory (overridden by settings.json mjpg_streamer.mjpg_streamer_root):
+# Environment=GROWCONTROL_MJPG_STREAMER_ROOT=/home/pi/src/mjpg-streamer/mjpg-streamer-experimental
 ExecStart=/usr/bin/python3 /home/pi/Growcontrol/growcontrol_webapi.py
 Restart=always
 RestartSec=2
