@@ -71,7 +71,6 @@ Build the `mjpg-streamer-experimental` folder, then set the install directory in
 5. Humidity drops after ventilation → you confirm the effect in the weather/metrics view.
 6. You open the attached MJPEG stream to visually verify plant posture and substrate.
 
-*(Roadmap placeholder: add actual notifications/actuation integrations.)*
 
 ## Who is this for?
 
@@ -91,10 +90,7 @@ If you already run Home Assistant, Growcontrol can still be useful as a dedicate
 ## Project Status
 
 - **Status**: actively developed (works for real setups; still evolving)
-- **Roadmap (placeholder)**:
-  - Notifications (Telegram/email) for “too dry / stale / error”
-  - Actuation hooks (fan/humidifier) via GPIO / MQTT
-  - More sensor types and calibration tools
+  - Actuation hooks (fan/humidifier) via GPIO / MQTT or any api
 
 ## Updating
 
