@@ -270,10 +270,15 @@
             <button id="refresh_selected_btn" class="btn primary" type="button">Refresh selected sensor now</button>
             <span id="refresh_selected_msg" class="empty"></span>
           </div>
+          <div id="analytics_debug" class="empty" style="margin-top:6px; font-style:normal; display:none;"></div>
         </div>
 
         <div class="analytics-main-column">
           <p id="watering_forecast" class="empty">Forecast not available yet.</p>
+          <div class="row" style="justify-content:space-between; gap:10px; margin: 2px 0 2px 0;">
+            <div id="analytics_charts_title" style="font-weight:800; letter-spacing:0.2px;">Charts</div>
+            <div id="analytics_charts_range" class="empty" style="font-style:normal;"></div>
+          </div>
           <p id="analytics_filter_note" class="empty" style="margin:0 0 6px 0; display:none;"></p>
           <div class="analytics-charts-stack">
             <canvas id="moisture_chart"></canvas>
@@ -312,6 +317,28 @@
     /** IANA zone for chart/overview timestamps, or "" for browser locale default */
     let chartTimeZone = "";
     let webcamStreamsCache = [];
+    let analyticsSensorsSource = ""; // "api" | "status" | ""
+
+    function setAnalyticsDebug(text) {
+      const el = document.getElementById("analytics_debug");
+      if (!el) return;
+      if (!text) {
+        el.style.display = "none";
+        el.textContent = "";
+        return;
+      }
+      el.style.display = "block";
+      el.textContent = text;
+    }
+
+    function populateSensorsFromStatus() {
+      const sensorsFromStatus = lastStatusData && lastStatusData.sensors ? lastStatusData.sensors : {};
+      currentSensors = Object.entries(sensorsFromStatus).map(([id, s]) => ({ id, name: (s && s.name) ? String(s.name) : id }));
+      analyticsSensorsSource = "status";
+      updateAnalyticsSensorSelect();
+      updateChartsHeader();
+      setAnalyticsDebug(`Sensors source: status.json (${currentSensors.length})`);
+    }
 
     async function apiRequest(path, method = "GET", body = undefined) {
       const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
@@ -567,6 +594,12 @@
           options: { responsive:true, maintainAspectRatio:false, scales:{ y1:{position:"left"}, y2:{position:"right", grid:{drawOnChartArea:false}} } }
         });
       } else {
+        // If the chart was previously created in compare mode, rebuild it (dataset shape mismatch).
+        if (!ecMoistureChart.data || !Array.isArray(ecMoistureChart.data.datasets) || ecMoistureChart.data.datasets.length < 3) {
+          resetCharts();
+          upsertCharts(readings);
+          return;
+        }
         ecMoistureChart.data.labels = labels;
         ecMoistureChart.data.datasets[0].data = moisture;
         ecMoistureChart.data.datasets[1].data = conductivity;
@@ -740,6 +773,7 @@
         select.innerHTML = '<option value="">-- no sensor available --</option>';
         if (compareSelect) compareSelect.innerHTML = "";
         activeAnalyticsSensorId = "";
+        updateChartsHeader();
         return;
       }
       currentSensors.forEach((sensor) => {
@@ -770,6 +804,7 @@
 
     async function refreshAnalytics() {
       const forecastEl = document.getElementById("watering_forecast");
+      updateChartsHeader();
       let webcamsErr = "";
       try {
         const wc = await apiRequest("/api/settings/webcams");
@@ -804,7 +839,7 @@
             apiRequest(`/api/history?sensor_id=${encodeURIComponent(sid)}&range=${encodeURIComponent(activeAnalyticsRange)}&limit=2000`)
           ));
           const seriesBySensor = {};
-          results.forEach((resp, i) => { seriesBySensor[ids[i]] = resp.readings || []; });
+          results.forEach((resp, i) => { seriesBySensor[ids[i]] = filterReadingsToRange(resp.readings || [], activeAnalyticsRange); });
           const first = seriesBySensor[ids[0]] || [];
           forecastEl.textContent = `Comparing ${ids.length} sensor(s). Forecast shown for ${ids[0]}: ${buildForecast(first, 25)}`;
           upsertChartsCompare(seriesBySensor);
@@ -817,14 +852,20 @@
       // Single sensor mode (existing behavior)
       renderFilterNote({});
       if (!activeAnalyticsSensorId) {
-        forecastEl.textContent = "Forecast not available yet.";
+        const sel = document.getElementById("analytics_sensor_select");
+        const fromUi = sel ? (sel.value || "").trim() : "";
+        if (fromUi) activeAnalyticsSensorId = fromUi;
+        else if (currentSensors.length) activeAnalyticsSensorId = currentSensors[0].id;
+      }
+      if (!activeAnalyticsSensorId) {
+        forecastEl.textContent = "Select a sensor to view charts.";
         renderAnalyticsWebcams("", webcamsErr);
         return;
       }
       renderAnalyticsWebcams(activeAnalyticsSensorId, webcamsErr);
       try {
         const data = await apiRequest(`/api/history?sensor_id=${encodeURIComponent(activeAnalyticsSensorId)}&range=${encodeURIComponent(activeAnalyticsRange)}&limit=2000`);
-        const readings = data.readings || [];
+        const readings = filterReadingsToRange(data.readings || [], activeAnalyticsRange);
         if (!readings.length) {
           forecastEl.textContent = "No historical data yet for this sensor.";
           return;
@@ -918,10 +959,75 @@
       refreshAnalytics();
     }
 
+    function resetCharts() {
+      try { if (moistureChart) moistureChart.destroy(); } catch (_) {}
+      try { if (temperatureChart) temperatureChart.destroy(); } catch (_) {}
+      try { if (ecMoistureChart) ecMoistureChart.destroy(); } catch (_) {}
+      moistureChart = null;
+      temperatureChart = null;
+      ecMoistureChart = null;
+    }
+
+    function rangeWindowMs(rangeKey) {
+      const k = String(rangeKey || "").trim();
+      if (k === "24h") return 24 * 3600 * 1000;
+      if (k === "7d") return 7 * 24 * 3600 * 1000;
+      if (k === "30d") return 30 * 24 * 3600 * 1000;
+      if (k === "1y") return 365 * 24 * 3600 * 1000;
+      const m = k.match(/^([hd])(\d{1,4})$/);
+      if (m) {
+        const unit = m[1];
+        const n = Number(m[2]);
+        if (!Number.isFinite(n) || n <= 0) return null;
+        return unit === "h" ? n * 3600 * 1000 : n * 24 * 3600 * 1000;
+      }
+      return null;
+    }
+
+    function filterReadingsToRange(readings, rangeKey) {
+      const win = rangeWindowMs(rangeKey);
+      if (!win || !Array.isArray(readings) || !readings.length) return readings || [];
+      const cutoff = Date.now() - win;
+      return readings.filter((r) => {
+        const t = new Date(r.ts).getTime();
+        return Number.isFinite(t) ? t >= cutoff : true;
+      });
+    }
+
+    function describeRange(rangeKey) {
+      const k = String(rangeKey || "").trim();
+      if (k === "24h") return "last 24 hours";
+      if (k === "7d") return "last 7 days";
+      if (k === "30d") return "last 30 days";
+      if (k === "1y") return "last year";
+      const m = k.match(/^([hd])(\d{1,4})$/);
+      if (m) {
+        const unit = m[1] === "h" ? "hour" : "day";
+        const n = Number(m[2]);
+        return `last ${n} ${unit}${n === 1 ? "" : "s"}`;
+      }
+      return k || "range";
+    }
+
+    function updateChartsHeader() {
+      const title = document.getElementById("analytics_charts_title");
+      const rangeEl = document.getElementById("analytics_charts_range");
+      if (title) {
+        if (analyticsViewMode === "compare") title.textContent = "Charts — compare sensors";
+        else {
+          const sensor = currentSensors.find((s) => s.id === activeAnalyticsSensorId);
+          const label = sensor ? (sensor.name ? `${sensor.name} (${sensor.id})` : sensor.id) : (activeAnalyticsSensorId || "—");
+          title.textContent = `Charts — ${label}`;
+        }
+      }
+      if (rangeEl) rangeEl.textContent = describeRange(activeAnalyticsRange);
+    }
+
     async function refresh() {
       syncChartTimeZoneFromStorage();
       try {
         const statusResp = await fetch("status.json", { cache: "no-store" });
+        if (!statusResp.ok) throw new Error(`status.json HTTP ${statusResp.status}`);
         const statusData = await statusResp.json();
         lastStatusData = statusData;
         setStatus("service_status", statusData.service_status || "unknown");
@@ -1001,6 +1107,7 @@
         renderSensorsViews(statusData);
       } catch (err) {
         setStatus("service_status", "error");
+        setAnalyticsDebug(`status.json failed: ${err && err.message ? err.message : String(err)}`);
       }
 
       try {
@@ -1027,9 +1134,17 @@
         } catch (_) {}
         const sensorsConfig = await apiRequest("/api/sensors");
         currentSensors = sensorsConfig.sensors || [];
+        analyticsSensorsSource = "api";
         updateAnalyticsSensorSelect();
+        setAnalyticsDebug(`Sensors source: API (${currentSensors.length})`);
         await refreshAnalytics();
-      } catch (err) {}
+      } catch (err) {
+        // Fallback: populate sensor dropdown from status.json so UI isn't empty if API is down.
+        const msg = (err && err.message) ? String(err.message) : String(err);
+        const forecastEl = document.getElementById("watering_forecast");
+        if (forecastEl) forecastEl.textContent = `API unavailable for analytics history (${msg}).`;
+        populateSensorsFromStatus();
+      }
 
       // Weather data file (collector writes this when enabled)
       try {
@@ -1058,6 +1173,7 @@
       const singleSel = document.getElementById("analytics_sensor_select");
       if (compareRow) compareRow.style.display = analyticsViewMode === "compare" ? "block" : "none";
       if (singleSel) singleSel.style.display = analyticsViewMode === "compare" ? "none" : "block";
+      resetCharts();
       await refreshAnalytics();
     });
 
@@ -1081,6 +1197,7 @@
         customRow.style.display = "none";
         setRange(v);
       }
+      updateChartsHeader();
     });
 
     document.getElementById("apply_custom_range").addEventListener("click", () => {
