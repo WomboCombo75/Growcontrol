@@ -35,7 +35,7 @@ fi
 
 echo "[1/7] Installing system packages"
 sudo apt-get update
-sudo apt-get install -y python3 python3-pip python3-venv bluetooth bluez bluez-tools nginx rsync curl ca-certificates git
+sudo apt-get install -y python3 python3-pip python3-venv bluetooth bluez bluez-tools nginx rsync curl ca-certificates git psmisc
 if ! id -nG "$RUN_USER" 2>/dev/null | tr ' ' '\n' | grep -qx bluetooth; then
   sudo usermod -aG bluetooth "$RUN_USER" 2>/dev/null || true
   echo "Added user '$RUN_USER' to group 'bluetooth'. Log out and back in (or reboot) if BLE access is denied."

@@ -67,6 +67,13 @@ For the best MJPEG experience, use the updated mjpg-streamer fork:
 
 Build the `mjpg-streamer-experimental` folder, then set the install directory in **Options → Webcam**.
 
+**Optional `config/settings.json` → `mjpg_streamer`:**
+
+- **`default_http_port`**: used when **Stream URL** is empty so **Start MJPEG server** still knows which TCP port to bind (default `8080`).
+- **`default_stream_url_path`**: path (and optional query) appended when Growcontrol **auto-fills Stream URL** after a successful start (e.g. `/?action=stream` or `/mjpeg/stream_simple.html`).
+
+On **Dashboard → Analytics**, the webcam pill **Live / Stopped / Stream** is decided by a short TCP check from the Pi to the stream URL’s host and port (`GET /api/stream/listening` on the web API). After `git pull`, run **`./deploy_web.sh`** and **`sudo systemctl restart growcontrol-webapi.service`** so the UI and API stay in sync.
+
 ## Example Use Case
 
 1. You place a Raspberry Pi in your grow tent and add a MiFlora sensor to each pot.
@@ -99,8 +106,9 @@ If you already run Home Assistant, Growcontrol can still be useful as a dedicate
 
 ## Updating
 
-- **UI only:** `./deploy_web.sh`
-- **Full update:** run the installer again (or `git pull` if you manage updates manually)
+- **UI only (HTML/CSS/JS):** from the repo directory, run `./deploy_web.sh` (needs `sudo` to write under `/var/www/html/growcontrol`), then hard-refresh the browser.
+- **Python API / logic:** `git pull`, then `sudo systemctl restart growcontrol-webapi.service` (restart the collector too if you changed sensor code).
+- **Full reinstall / deps:** run the one-line installer again (it also ensures `psmisc` for `fuser`, used when stopping MJPEG by port).
 
 ## Troubleshooting (quick)
 

@@ -18,6 +18,8 @@
   "webcam_streams": [],
   "mjpg_streamer": {
     "mjpg_streamer_root": "",
+    "default_http_port": 8080,
+    "default_stream_url_path": "/?action=stream",
     "args": ["-i", "input_uvc.so", "-o", "output_http.so -w www -p {port}"]
   }
 }

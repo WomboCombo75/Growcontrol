@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import time
 from datetime import datetime, timezone
@@ -92,13 +93,12 @@ def normalize_webcam_streams(raw: Any) -> tuple[List[Dict[str, Any]], List[str]]
         seen_ids.add(sid)
         label = str(item.get("label", "")).strip() or sid
         url = str(item.get("stream_url", "")).strip()
-        if not url:
-            continue
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"webcam_streams[{i}].stream_url must use http or https")
-        if len(url) > 2048:
-            raise ValueError("webcam stream URL is too long (max 2048 characters)")
+        if url:
+            parsed = urlparse(url)
+            if parsed.scheme not in ("http", "https"):
+                raise ValueError(f"webcam_streams[{i}].stream_url must use http or https")
+            if len(url) > 2048:
+                raise ValueError("webcam stream URL is too long (max 2048 characters)")
         raw_sensors = item.get("sensor_ids", [])
         if not isinstance(raw_sensors, list):
             raw_sensors = []
@@ -258,11 +258,60 @@ def read_update_status() -> Dict[str, Any]:
 
 
 DEFAULT_MJPG_STREAMER_ARGS = ["-i", "input_uvc.so", "-o", "output_http.so -w www -p {port}"]
+DEFAULT_MJPEG_STREAM_AUTOFILL_PATH = "/?action=stream"
+DEFAULT_MJPEG_HTTP_PORT = 8080
+
+
+def normalize_default_http_port(raw: Any) -> int:
+    if raw is None or raw == "":
+        return DEFAULT_MJPEG_HTTP_PORT
+    try:
+        p = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("default_http_port must be an integer 1..65535") from exc
+    if p < 1 or p > 65535:
+        raise ValueError("default_http_port must be between 1 and 65535")
+    return p
+
+
+def normalize_default_stream_url_path(raw: Any) -> str:
+    """
+    Relative path/query used when the UI builds Stream URL after MJPEG Start.
+    Must start with '/'. Typical values: '/?action=stream', '/mjpeg/stream_simple.html'
+    """
+    s = "" if raw is None else str(raw).strip()
+    if not s:
+        return DEFAULT_MJPEG_STREAM_AUTOFILL_PATH
+    if not s.startswith("/"):
+        raise ValueError("default_stream_url_path must start with '/'")
+    if len(s) > 512:
+        raise ValueError("default_stream_url_path is too long (max 512 characters)")
+    if "\n" in s or "\r" in s:
+        raise ValueError("default_stream_url_path must be a single line")
+    return s
 
 
 def _mjpg_settings_block(settings: Dict[str, Any]) -> Dict[str, Any]:
     raw = settings.get("mjpg_streamer")
     return raw if isinstance(raw, dict) else {}
+
+
+def mjpeg_autofill_path_from_settings(settings: Dict[str, Any]) -> str:
+    block = _mjpg_settings_block(settings)
+    raw = block.get("default_stream_url_path")
+    try:
+        return normalize_default_stream_url_path(raw)
+    except ValueError:
+        return DEFAULT_MJPEG_STREAM_AUTOFILL_PATH
+
+
+def mjpeg_default_http_port_from_settings(settings: Dict[str, Any]) -> int:
+    block = _mjpg_settings_block(settings)
+    raw = block.get("default_http_port")
+    try:
+        return normalize_default_http_port(raw)
+    except ValueError:
+        return DEFAULT_MJPEG_HTTP_PORT
 
 
 def mjpg_streamer_root_from_settings_only(settings: Dict[str, Any]) -> str:
@@ -309,6 +358,38 @@ def infer_mjpeg_http_port(url: str) -> Optional[int]:
         return 8080
     except Exception:  # noqa: BLE001
         return None
+
+
+def stream_url_tcp_listening(url: str, timeout: float = 0.5) -> Tuple[bool, str]:
+    """
+    Best-effort: TCP connect to the stream URL's host:port from this machine.
+    Used so the Dashboard can show Stopped vs Live when nothing accepts that port.
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return False, "empty url"
+    try:
+        u = urlparse(raw)
+    except Exception as exc:  # noqa: BLE001
+        return False, str(exc)
+    if u.scheme not in ("http", "https"):
+        return False, "url must be http or https"
+    host = (u.hostname or "").strip()
+    if not host:
+        return False, "missing host"
+    if host in ("localhost", "::1"):
+        host = "127.0.0.1"
+    port = u.port
+    if port is None:
+        port = 443 if u.scheme == "https" else 8080
+    if port < 1 or port > 65535:
+        return False, "invalid port"
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            pass
+        return True, ""
+    except OSError as exc:
+        return False, str(exc)
 
 
 def mjpg_streamer_argv(port: int, settings: Dict[str, Any]) -> List[str]:
@@ -468,6 +549,24 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if parsed.path in ("/api/mjpg/listening", "/api/stream/listening"):
+            query = parse_qs(parsed.query, keep_blank_values=False)
+            surl = str(query.get("stream_url", [""])[0]).strip()
+            if not surl:
+                json_response(self, 400, {"error": "missing query param: stream_url", "listening": False})
+                return
+            ok, err = stream_url_tcp_listening(surl)
+            json_response(
+                self,
+                200,
+                {
+                    "stream_url": surl,
+                    "listening": ok,
+                    "detail": err or None,
+                },
+            )
+            return
+
         if parsed.path == "/api/sensors":
             try:
                 data = load_sensors(SENSORS_FILE)
@@ -614,6 +713,8 @@ class Handler(BaseHTTPRequestHandler):
                         "resolved_install_dir": str(install_dir),
                         "mjpg_streamer_found": exe.is_file(),
                         "args": args_out,
+                        "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
+                        "default_http_port": mjpeg_default_http_port_from_settings(settings),
                     },
                 )
             except Exception as exc:  # noqa: BLE001
@@ -813,7 +914,7 @@ class Handler(BaseHTTPRequestHandler):
                     "success": True,
                     "webcam_streams": clean,
                     "warnings": warnings,
-                    "note": "Dashboard loads streams in the browser; use a URL reachable from your phone/PC (often http://<pi-ip>:PORT/?action=stream, not localhost on another device).",
+                    "note": "Dashboard loads streams in the browser; use http(s) reachable from your viewer device (often http://<pi-ip>:PORT/… not localhost elsewhere). *.html URLs show in iframe; MJPEG URLs go in <img>.",
                 },
             )
             return
@@ -837,6 +938,18 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     json_response(self, 400, {"error": "args must be a JSON array of strings or null"})
                     return
+            if "default_stream_url_path" in body:
+                try:
+                    block["default_stream_url_path"] = normalize_default_stream_url_path(body.get("default_stream_url_path"))
+                except ValueError as exc:
+                    json_response(self, 400, {"error": str(exc)})
+                    return
+            if "default_http_port" in body:
+                try:
+                    block["default_http_port"] = normalize_default_http_port(body.get("default_http_port"))
+                except ValueError as exc:
+                    json_response(self, 400, {"error": str(exc)})
+                    return
             settings["mjpg_streamer"] = block
             try:
                 write_settings_file(settings)
@@ -854,6 +967,8 @@ class Handler(BaseHTTPRequestHandler):
                     "mjpg_streamer_root_saved": block.get("mjpg_streamer_root", ""),
                     "resolved_install_dir": str(install_dir),
                     "mjpg_streamer_found": exe.is_file(),
+                    "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
+                    "default_http_port": mjpeg_default_http_port_from_settings(settings),
                 },
             )
             return
@@ -993,7 +1108,18 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 ok, msg, pid = start_mjpg_streamer_subprocess(port, settings)
                 if ok:
-                    json_response(self, 200, {"success": True, "message": msg, "port": port, "pid": pid})
+                    json_response(
+                        self,
+                        200,
+                        {
+                            "success": True,
+                            "message": msg,
+                            "port": port,
+                            "pid": pid,
+                            "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
+                            "default_http_port": mjpeg_default_http_port_from_settings(settings),
+                        },
+                    )
                 else:
                     json_response(self, 500, {"success": False, "error": msg, "port": port})
                 return
@@ -1020,7 +1146,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             ok, msg, pid = start_mjpg_streamer_subprocess(port, settings)
             if ok:
-                json_response(self, 200, {"success": True, "message": msg, "port": port, "pid": pid})
+                json_response(
+                    self,
+                    200,
+                    {
+                        "success": True,
+                        "message": msg,
+                        "port": port,
+                        "pid": pid,
+                        "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
+                        "default_http_port": mjpeg_default_http_port_from_settings(settings),
+                    },
+                )
             else:
                 json_response(self, 500, {"success": False, "error": msg, "port": port})
             return

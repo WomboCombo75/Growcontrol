@@ -145,17 +145,46 @@
       padding: 4px 10px;
       border-radius: 999px;
     }
+    #analytics_webcam_holder .webcam-off-pill {
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #fff;
+      background: linear-gradient(90deg, #6e7781, #57606a);
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    #analytics_webcam_holder .webcam-check-pill,
+    #analytics_webcam_holder .webcam-unknown-pill {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #24292f;
+      background: #eaeef2;
+      border: 1px solid #d0d7de;
+      padding: 3px 9px;
+      border-radius: 999px;
+    }
     #analytics_webcam_holder .webcam-frame-body { padding: 10px; background: #0a0f1a; }
-    #analytics_webcam_holder img {
+    #analytics_webcam_holder img,
+    #analytics_webcam_holder .webcam-embed-frame {
       display: block;
       width: 100%;
       max-height: min(65vh, 720px);
       object-fit: contain;
       border-radius: 10px;
       background: #000;
+      border: 0;
+    }
+    #analytics_webcam_holder .webcam-embed-frame {
+      min-height: min(50vh, 420px);
+      object-fit: initial;
     }
     @media (max-width: 600px) {
-      #analytics_webcam_holder img { max-height: min(50vh, 480px); }
+      #analytics_webcam_holder img,
+      #analytics_webcam_holder .webcam-embed-frame { max-height: min(50vh, 480px); }
     }
     #analytics_webcam_holder .webcam-hint { font-size: 13px; color: #57606a; margin: 0; padding: 0 4px; line-height: 1.45; }
     #analytics_webcam_holder .webcam-err { font-size: 13px; color: #b42318; margin: 0; padding: 8px 12px; line-height: 1.45; background: #fff5f5; border-radius: 10px; border: 1px solid #ffd1cc; }
@@ -342,9 +371,12 @@
 
     async function apiRequest(path, method = "GET", body = undefined) {
       const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
+      const headers = {};
+      if (apiKey) headers["X-API-Key"] = apiKey;
+      if (method !== "GET" && method !== "HEAD") headers["Content-Type"] = "application/json";
       const response = await fetch(`${apiBase}${path}`, {
         method,
-        headers: { "Content-Type": "application/json", "X-API-Key": apiKey },
+        headers,
         body: body === undefined ? undefined : JSON.stringify(body),
       });
       let payload = {};
@@ -708,6 +740,83 @@
       return ids.includes(sid);
     }
 
+    /** HTML viewer pages (*.htm / *.html) use iframe; raw MJPEG uses <img>. */
+    function streamUrlLooksLikeHtmlViewer(rawUrl) {
+      const u = String(rawUrl || "").trim();
+      if (!u) return false;
+      try {
+        const pathname = new URL(u, window.location.href).pathname;
+        return /\.htm(l)?$/i.test(pathname);
+      } catch (_) {
+        return /\.htm(l)?(?:[?#]|$)/i.test(u);
+      }
+    }
+
+    function parseListeningPayload(data) {
+      if (!data || typeof data !== "object") return null;
+      if (typeof data.listening === "boolean") return data.listening;
+      if (data.listening === true || data.listening === "true") return true;
+      if (data.listening === false || data.listening === "false") return false;
+      return null;
+    }
+
+    /** Dedicated GET (no JSON Content-Type) so reverse proxies accept the listening probe. */
+    async function fetchStreamTcpListening(url) {
+      const apiKey = (window.localStorage.getItem("growcontrol_api_key") || "").trim();
+      const q = new URLSearchParams();
+      q.append("stream_url", url);
+      const qs = q.toString();
+      const paths = [`/api/stream/listening?${qs}`, `/api/mjpg/listening?${qs}`];
+      for (const path of paths) {
+        try {
+          const headers = {};
+          if (apiKey) headers["X-API-Key"] = apiKey;
+          const res = await fetch(`${apiBase}${path}`, { method: "GET", headers, cache: "no-store" });
+          const text = await res.text();
+          let data = {};
+          try {
+            data = text ? JSON.parse(text) : {};
+          } catch (_) {
+            data = {};
+          }
+          if (!res.ok) continue;
+          const v = parseListeningPayload(data);
+          if (v !== null) return v;
+        } catch (_) {
+          /* try next path */
+        }
+      }
+      return null;
+    }
+
+    async function updateWebcamStatePills(holder, streams) {
+      const pills = holder.querySelectorAll("[data-webcam-url]");
+      if (!pills.length) return;
+      const urls = [...new Set(streams.map((s) => String(s.stream_url || "").trim()).filter(Boolean))];
+      const statusByUrl = new Map();
+      await Promise.all(
+        urls.map(async (url) => {
+          const v = await fetchStreamTcpListening(url);
+          statusByUrl.set(url, v);
+        })
+      );
+      pills.forEach((pill) => {
+        const url = pill.getAttribute("data-webcam-url");
+        if (!url) return;
+        const v = statusByUrl.get(url);
+        if (v === true) {
+          pill.textContent = "Live";
+          pill.className = "webcam-live-pill";
+        } else if (v === false) {
+          pill.textContent = "Stopped";
+          pill.className = "webcam-off-pill";
+        } else {
+          pill.textContent = "Stream";
+          pill.className = "webcam-unknown-pill";
+        }
+      });
+    }
+
     function renderAnalyticsWebcams(sensorId, webcamsFetchError) {
       const holder = document.getElementById("analytics_webcam_holder");
       if (!holder) return;
@@ -723,7 +832,9 @@
         return;
       }
       const all = Array.isArray(webcamStreamsCache) ? webcamStreamsCache : [];
-      const streams = all.filter((st) => streamMatchesSensor(st, sensorId));
+      const streams = all
+        .filter((st) => streamMatchesSensor(st, sensorId))
+        .filter((st) => String(st.stream_url || "").trim());
       if (all.length && !streams.length) {
         const hint = document.createElement("p");
         hint.className = "webcam-hint";
@@ -738,30 +849,48 @@
         header.className = "webcam-frame-header";
         const h = document.createElement("h3");
         h.textContent = st.label || st.id || "Webcam";
+        const streamUrl = String(st.stream_url || "");
         const pill = document.createElement("span");
-        pill.className = "webcam-live-pill";
-        pill.textContent = "Live";
+        pill.className = "webcam-check-pill";
+        pill.textContent = "Checking…";
+        pill.setAttribute("data-webcam-url", streamUrl);
         header.appendChild(h);
         header.appendChild(pill);
         const body = document.createElement("div");
         body.className = "webcam-frame-body";
-        const img = document.createElement("img");
-        img.alt = "";
-        img.referrerPolicy = "no-referrer";
-        img.loading = "eager";
-        img.src = String(st.stream_url || "");
-        img.addEventListener("error", () => {
-          const note = document.createElement("p");
-          note.className = "webcam-hint";
-          note.style.padding = "8px 4px 0";
-          note.textContent = "Image failed to load. Use a URL your browser can reach (often http://<this-pi-ip>:PORT/?action=stream, not localhost from another device).";
-          body.appendChild(note);
-        }, { once: true });
-        body.appendChild(img);
+        if (streamUrlLooksLikeHtmlViewer(streamUrl)) {
+          const frame = document.createElement("iframe");
+          frame.className = "webcam-embed-frame";
+          frame.src = streamUrl;
+          frame.title = (st.label && String(st.label)) || "Webcam stream";
+          frame.referrerPolicy = "no-referrer";
+          frame.setAttribute("allowfullscreen", "");
+          frame.setAttribute(
+            "sandbox",
+            "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+          );
+          body.appendChild(frame);
+        } else {
+          const img = document.createElement("img");
+          img.alt = "";
+          img.referrerPolicy = "no-referrer";
+          img.loading = "eager";
+          img.src = streamUrl;
+          img.addEventListener("error", () => {
+            const note = document.createElement("p");
+            note.className = "webcam-hint";
+            note.style.padding = "8px 4px 0";
+            note.textContent =
+              "Live image failed to load. Use an http(s) URL your browser can open: raw MJPEG (e.g. …/?action=stream) or any stream viewer HTML page (*.html loads in a frame instead of <img>).";
+            body.appendChild(note);
+          }, { once: true });
+          body.appendChild(img);
+        }
         wrap.appendChild(header);
         wrap.appendChild(body);
         holder.appendChild(wrap);
       });
+      if (streams.length) void updateWebcamStatePills(holder, streams);
     }
 
     function updateAnalyticsSensorSelect() {

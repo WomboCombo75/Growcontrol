@@ -176,8 +176,8 @@
             <strong>Optional</strong>
             <span class="pill neutral">mjpg-streamer</span>
           </div>
-          <p class="wc-tip-line">MJPEG URL: use your Pi’s LAN IP (e.g. <code>http://192.168.x.x:8080/?action=stream</code>), not <code>localhost</code>, so phones/PCs can open the stream.</p>
-          <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Set install path, then <strong>Start</strong> or <strong>Stop MJPEG server</strong> (HTTP port from the URL, default 8080). More: <code>mjpg_streamer</code> in <code>settings.json</code> or <code>GROWCONTROL_MJPG_STREAMER_ROOT</code>.</p>
+          <p class="wc-tip-line">You can leave <strong>Stream URL</strong> empty: <strong>Start MJPEG server</strong> fills it automatically (host from how you opened this page, port from the URL or <code>mjpg_streamer.default_http_port</code> in <code>config/settings.json</code>, path from <code>default_stream_url_path</code>). Override by typing a URL. Use your Pi’s LAN host when you use the Dashboard from another device.</p>
+          <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Click <strong>Save webcam streams</strong> after edits. Set the install path below, then <strong>Save MJPEG install path</strong>.</p>
         </div>
         <label for="mjpg_streamer_root">mjpg-streamer install directory</label>
         <input id="mjpg_streamer_root" type="text" placeholder="/path/to/mjpg-streamer-experimental" style="max-width:100%;" />
@@ -263,6 +263,33 @@
     let sensorPollMinutes = 60;
     let webcamEditRows = [];
     let lastSensorsForWebcam = [];
+    /** From GET /api/settings/mjpg-streamer — used to auto-fill Stream URL after Start. */
+    let mjpegAutofillFromApi = { default_stream_url_path: "/?action=stream", default_http_port: 8080 };
+
+    function syncMjpegAutofillFromApi(mj) {
+      if (!mj || typeof mj !== "object") return;
+      const p = mj.default_stream_url_path;
+      if (p != null && String(p).trim()) {
+        mjpegAutofillFromApi.default_stream_url_path = String(p).trim();
+      }
+      const hp = mj.default_http_port;
+      if (hp != null && Number.isFinite(Number(hp))) {
+        const n = Math.floor(Number(hp));
+        if (n >= 1 && n <= 65535) mjpegAutofillFromApi.default_http_port = n;
+      }
+    }
+
+    function getMjpegAutofillPath() {
+      const s = (mjpegAutofillFromApi.default_stream_url_path || "/?action=stream").trim();
+      return s.startsWith("/") ? s : `/${s.replace(/^\/?/, "")}`;
+    }
+
+    function resolvedMjpegPortForRow(urlRaw) {
+      const p = inferMjpegPortFromUrl(coerceHttpStreamUrl(urlRaw));
+      if (p !== null) return p;
+      const d = Number(mjpegAutofillFromApi.default_http_port);
+      return Number.isFinite(d) && d >= 1 && d <= 65535 ? d : 8080;
+    }
 
     async function apiRequest(path, method = "GET", body = undefined) {
       const apiKey = window.localStorage.getItem("growcontrol_api_key") || "";
@@ -364,11 +391,20 @@
       window.localStorage.setItem("growcontrol_chart_timezone", tz);
     }
 
+    /** Allow pasting bare host paths (prepends http:// for parsing). */
+    function coerceHttpStreamUrl(raw) {
+      const t = String(raw ?? "").trim();
+      if (!t) return "";
+      if (/^https?:\/\//i.test(t)) return t;
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(t)) return t;
+      return `http://${t}`;
+    }
+
     function inferMjpegPortFromUrl(url) {
-      const s = (url || "").trim();
+      const s = coerceHttpStreamUrl(url);
       if (!s) return null;
       try {
-        const u = new URL(s);
+        const u = new URL(s, window.location.href);
         if (u.protocol !== "http:" && u.protocol !== "https:") return null;
         if (!u.hostname) return null;
         if (u.port) {
@@ -379,6 +415,54 @@
       } catch (_) {
         return null;
       }
+    }
+
+    /** Prefer LAN hostname when browsing Options via the Pi’s IP instead of localhost. */
+    function preferredStreamHost(hostname) {
+      const h = String(hostname || "").toLowerCase();
+      const pageHost = String(window.location.hostname || "").toLowerCase();
+      const localish = !h || h === "localhost" || h === "127.0.0.1" || h === "::1";
+      if (!localish) return hostname;
+      if (pageHost && pageHost !== "localhost" && pageHost !== "127.0.0.1" && pageHost !== "::1") {
+        return window.location.hostname;
+      }
+      return h || "127.0.0.1";
+    }
+
+    /** Apply mjpg_streamer.default_stream_url_path (e.g. /?action=stream or /mjpeg/stream_simple.html). */
+    function applyStreamPathToUrl(u, pathStr) {
+      const def = (pathStr || "/?action=stream").trim() || "/?action=stream";
+      const normalized = def.startsWith("/") ? def : `/${def.replace(/^\/?/, "")}`;
+      const qi = normalized.indexOf("?");
+      if (qi >= 0) {
+        u.pathname = normalized.slice(0, qi) || "/";
+        u.search = normalized.slice(qi);
+      } else {
+        u.pathname = normalized || "/";
+        u.search = "";
+      }
+    }
+
+    /** Full Stream URL after Start (or for display); does not require user-typed Stream URL. */
+    function buildAutofilledStreamUrl(port) {
+      const p = parseInt(port, 10);
+      if (!Number.isFinite(p) || p < 1 || p > 65535) return "";
+      const u = new URL(`http://127.0.0.1:${p}/`, window.location.href);
+      applyStreamPathToUrl(u, getMjpegAutofillPath());
+      u.protocol = "http:";
+      u.hostname = preferredStreamHost("127.0.0.1");
+      u.port = String(p);
+      return u.href;
+    }
+
+    function applyWebcamRowStreamUrlAfterStart(rowIdx, filledUrl) {
+      if (!webcamEditRows[rowIdx]) return;
+      webcamEditRows[rowIdx].stream_url = filledUrl;
+      const holder = document.getElementById("webcam_streams_editor");
+      const box = holder && holder.querySelector(`[data-wc-index="${rowIdx}"]`);
+      const inp = box && box.querySelector(".wc-inp-url");
+      if (inp) inp.value = filledUrl;
+      if (box) ensureWebcamStartRow(box, rowIdx);
     }
 
     function wcStreamField(labelText, control) {
@@ -393,12 +477,8 @@
 
     function ensureWebcamStartRow(box, idx) {
       const urlEl = box.querySelector(".wc-inp-url");
-      const port = inferMjpegPortFromUrl(urlEl ? urlEl.value : "");
+      const port = resolvedMjpegPortForRow(urlEl ? urlEl.value : "");
       let row = box.querySelector(".wc-start-row");
-      if (port === null) {
-        if (row) row.remove();
-        return;
-      }
       if (!row) {
         row = document.createElement("div");
         row.className = "wc-start-row";
@@ -413,23 +493,27 @@
         startBtn.addEventListener("click", async () => {
           const msg = document.getElementById("webcam_message");
           syncWebcamRowsFromDom();
-          const urlNow = (webcamEditRows[idx] && webcamEditRows[idx].stream_url) || "";
-          const p = inferMjpegPortFromUrl(urlNow);
-          if (p === null) {
-            msg.style.color = "#b42318";
-            msg.textContent = "Need a valid http(s) URL with a host (add :PORT or omit port to use 8080 on http).";
-            return;
-          }
+          const urlRaw = (webcamEditRows[idx] && webcamEditRows[idx].stream_url) || "";
+          const p = resolvedMjpegPortForRow(urlRaw);
           startBtn.disabled = true;
           try {
             const data = await apiRequest("/api/mjpg", "POST", { run: "start", port: p });
+            syncMjpegAutofillFromApi(data);
             msg.style.color = "#116329";
-            msg.textContent = data.message || `Started on port ${p}.`;
+            const assembled = buildAutofilledStreamUrl(p);
+            if (assembled) {
+              applyWebcamRowStreamUrlAfterStart(idx, assembled);
+              msg.textContent = `${data.message || `Started on port ${p}.`} Stream URL filled automatically.`;
+            } else {
+              msg.textContent = data.message || `Started on port ${p}.`;
+            }
           } catch (err) {
             msg.style.color = "#b42318";
             msg.textContent = String(err);
           } finally {
-            startBtn.disabled = false;
+            const holderReload = document.getElementById("webcam_streams_editor");
+            const boxReload = holderReload && holderReload.querySelector(`[data-wc-index="${idx}"]`);
+            if (boxReload) ensureWebcamStartRow(boxReload, idx);
             updateAuthNotice();
           }
         });
@@ -442,13 +526,8 @@
         stopBtn.addEventListener("click", async () => {
           const msg = document.getElementById("webcam_message");
           syncWebcamRowsFromDom();
-          const urlNow = (webcamEditRows[idx] && webcamEditRows[idx].stream_url) || "";
-          const p = inferMjpegPortFromUrl(urlNow);
-          if (p === null) {
-            msg.style.color = "#b42318";
-            msg.textContent = "Need a valid http(s) URL with a host (add :PORT or omit port to use 8080 on http).";
-            return;
-          }
+          const urlRaw = (webcamEditRows[idx] && webcamEditRows[idx].stream_url) || "";
+          const p = resolvedMjpegPortForRow(urlRaw);
           stopBtn.disabled = true;
           try {
             const data = await apiRequest("/api/mjpg", "POST", { run: "stop", port: p });
@@ -458,7 +537,9 @@
             msg.style.color = "#b42318";
             msg.textContent = String(err);
           } finally {
-            stopBtn.disabled = false;
+            const holderReload = document.getElementById("webcam_streams_editor");
+            const boxReload = holderReload && holderReload.querySelector(`[data-wc-index="${idx}"]`);
+            if (boxReload) ensureWebcamStartRow(boxReload, idx);
             updateAuthNotice();
           }
         });
@@ -473,9 +554,16 @@
         if (rm && rm.parentNode === box) box.insertBefore(row, rm);
         else box.appendChild(row);
       }
+      const btns = row.querySelector(".wc-mjpeg-btns");
+      const startBtnEl = btns && btns.querySelector("button:first-of-type");
+      const stopBtnEl = btns && btns.querySelector("button:nth-of-type(2)");
       const hintEl = row.querySelector(".wc-start-hint");
+      if (startBtnEl) startBtnEl.disabled = false;
+      if (stopBtnEl) stopBtnEl.disabled = false;
       if (hintEl) {
-        hintEl.textContent = `Start / stop use TCP port ${port} from this URL (Stop sends SIGTERM via fuser).`;
+        const fromUrl = inferMjpegPortFromUrl(coerceHttpStreamUrl(urlEl ? urlEl.value : ""));
+        const src = fromUrl != null ? "Stream URL" : `default_http_port (${port})`;
+        hintEl.textContent = `Start / stop use TCP port ${port} (${src}). Stop sends SIGTERM via fuser. After Start, Stream URL is filled from settings.`;
       }
     }
 
@@ -513,7 +601,7 @@
         const inpU = document.createElement("input");
         inpU.type = "text";
         inpU.className = "wc-inp-url";
-        inpU.placeholder = "http://127.0.0.1:8080/?action=stream";
+        inpU.placeholder = "http://192.168.x.x:8899/mjpeg/stream_simple.html";
         inpU.value = row.stream_url || "";
         inpU.addEventListener("input", () => {
           webcamEditRows[idx].stream_url = inpU.value;
@@ -710,6 +798,7 @@
       }
       try {
         const mj = await apiRequest("/api/settings/mjpg-streamer");
+        syncMjpegAutofillFromApi(mj);
         const rootInp = document.getElementById("mjpg_streamer_root");
         const st = document.getElementById("mjpg_streamer_status");
         if (rootInp) rootInp.value = mj.mjpg_streamer_root_saved || "";
@@ -872,6 +961,7 @@
         try {
           const mjpg_streamer_root = document.getElementById("mjpg_streamer_root").value.trim();
           const data = await apiRequest("/api/settings/mjpg-streamer", "POST", { mjpg_streamer_root });
+          syncMjpegAutofillFromApi(data);
           const st = document.getElementById("mjpg_streamer_status");
           const dir = data.resolved_install_dir || "";
           if (data.mjpg_streamer_found) {
@@ -896,7 +986,12 @@
         msg.textContent = "";
         try {
           syncWebcamRowsFromDom();
-          const payload = webcamEditRows.filter((r) => (r.stream_url || "").trim());
+          const payload = webcamEditRows.map((r) => ({
+            id: r.id || "",
+            label: String(r.label || ""),
+            stream_url: String(r.stream_url || ""),
+            sensor_ids: Array.isArray(r.sensor_ids) ? r.sensor_ids : [],
+          }));
           const data = await apiRequest("/api/settings/webcams", "POST", { webcam_streams: payload });
           webcamEditRows = JSON.parse(JSON.stringify(data.webcam_streams || []));
           renderWebcamStreamsEditor();
