@@ -65,12 +65,13 @@ sudo systemctl restart growcontrol-collector.service growcontrol-webapi.service
 For the best MJPEG experience, use the updated mjpg-streamer fork:
 [`WomboCombo75/new-mjpg-streamer`](https://github.com/WomboCombo75/new-mjpg-streamer)
 
-Build the `mjpg-streamer-experimental` folder, then set the install directory in **Options → Webcam**.
+Build [new-mjpg-streamer](https://github.com/WomboCombo75/new-mjpg-streamer), then set the install directory in **Options → Webcam**.
 
 **Optional `config/settings.json` → `mjpg_streamer`:**
 
 - **`default_http_port`**: used when **Stream URL** is empty so **Start MJPEG server** still knows which TCP port to bind (default `8080`).
 - **`default_stream_url_path`**: path (and optional query) appended when Growcontrol **auto-fills Stream URL** after a successful start (e.g. `/?action=stream` or `/mjpeg/stream_simple.html`).
+- **`camera`**: resolution, FPS, JPEG quality, and image tuning (brightness/contrast/sharpness/saturation) passed to `input_uvc.so`. Configure in **Options → Webcam → Camera capture**; stop the stream, save, then start again.
 
 On **Dashboard → Analytics**, the webcam pill **Live / Stopped / Stream** is decided by a short TCP check from the Pi to the stream URL’s host and port (`GET /api/stream/listening` on the web API). After `git pull`, run **`./deploy_web.sh`** and **`sudo systemctl restart growcontrol-webapi.service`** so the UI and API stay in sync.
 

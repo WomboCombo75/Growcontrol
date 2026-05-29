@@ -20,14 +20,16 @@ XIAOMI_SERVICE_HINTS = ("0000fe95", "fe95")
 LIKELY_FLORA_PREFIXES = ("5C:85:7E",)
 
 
-def repair_sensors(data: Dict[str, List[Dict[str, object]]]) -> Tuple[Dict[str, List[Dict[str, object]]], bool]:
+def repair_sensors(data: Dict[str, List[Dict[str, object]]]) -> Tuple[Dict[str, List[Dict[str, object]]], bool, List[Tuple[str, str]]]:
     """Assign missing ids/names so sensor actions remain addressable."""
     sensors = data.setdefault("sensors", [])
     used_ids = {str(sensor.get("id", "")).strip() for sensor in sensors if str(sensor.get("id", "")).strip()}
     changed = False
+    repairs: List[Tuple[str, str]] = []
 
     for index, sensor in enumerate(sensors):
-        sensor_id = str(sensor.get("id", "")).strip()
+        old_id = str(sensor.get("id", "")).strip()
+        sensor_id = old_id
         if not sensor_id:
             mac = str(sensor.get("mac", "")).replace(":", "").upper()
             base = f"sensor_{mac[-6:]}" if len(mac) >= 6 else f"sensor_{index + 1}"
@@ -39,13 +41,55 @@ def repair_sensors(data: Dict[str, List[Dict[str, object]]]) -> Tuple[Dict[str, 
             sensor["id"] = candidate
             used_ids.add(candidate)
             changed = True
+            repairs.append((old_id, candidate))
             sensor_id = candidate
 
         if not str(sensor.get("name", "")).strip():
             sensor["name"] = sensor_id
             changed = True
 
-    return data, changed
+    return data, changed, repairs
+
+
+def _database_path() -> Path:
+    db_path = Path(os.getenv("GROWCONTROL_DB_FILE", "data/growcontrol.db"))
+    if not db_path.is_absolute():
+        db_path = Path.cwd() / db_path
+    return db_path
+
+
+def migrate_repaired_sensor_history(repairs: List[Tuple[str, str]]) -> None:
+    if not repairs:
+        return
+    db_path = _database_path()
+    if not db_path.exists():
+        return
+    try:
+        from growcontrol_storage import GrowcontrolStorage
+
+        storage = GrowcontrolStorage(db_path)
+        for old_id, new_id in repairs:
+            storage.rename_sensor_history(old_id, new_id)
+    except Exception:
+        return
+
+
+def migrate_orphan_sensor_history(data: Dict[str, List[Dict[str, object]]]) -> None:
+    """Move readings stored under an empty sensor_id when only one sensor exists."""
+    sensors = [s for s in data.get("sensors", []) if str(s.get("id", "")).strip()]
+    if len(sensors) != 1:
+        return
+    db_path = _database_path()
+    if not db_path.exists():
+        return
+    try:
+        from growcontrol_storage import GrowcontrolStorage
+
+        sensor_id = str(sensors[0]["id"]).strip()
+        storage = GrowcontrolStorage(db_path)
+        storage.rename_sensor_history("", sensor_id)
+    except Exception:
+        return
 
 
 def load_sensors(path: Path) -> Dict[str, List[Dict[str, object]]]:
@@ -53,9 +97,11 @@ def load_sensors(path: Path) -> Dict[str, List[Dict[str, object]]]:
         return {"sensors": []}
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
-    data, changed = repair_sensors(data)
+    data, changed, repairs = repair_sensors(data)
     if changed:
         save_sensors(path, data)
+    migrate_repaired_sensor_history(repairs)
+    migrate_orphan_sensor_history(data)
     return data
 
 

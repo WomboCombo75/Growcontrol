@@ -103,6 +103,22 @@
       line-height: 1.45;
     }
     .analytics-charts-stack { display: flex; flex-direction: column; gap: 14px; width: 100%; min-width: 0; }
+    .analytics-charts-status {
+      display: none;
+      border: 1px solid #d0d7de;
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #f6f8fa;
+      color: #424a53;
+      font-size: 14px;
+      line-height: 1.45;
+      font-style: normal;
+    }
+    .analytics-charts-status.err {
+      background: #ffebe9;
+      border-color: #ffd1cc;
+      color: #b42318;
+    }
     #analytics_webcam_holder {
       display: flex;
       flex-direction: column;
@@ -309,6 +325,7 @@
             <div id="analytics_charts_range" class="empty" style="font-style:normal;"></div>
           </div>
           <p id="analytics_filter_note" class="empty" style="margin:0 0 6px 0; display:none;"></p>
+          <div id="analytics_charts_status" class="analytics-charts-status" role="status" aria-live="polite"></div>
           <div class="analytics-charts-stack">
             <canvas id="moisture_chart"></canvas>
             <canvas id="temperature_chart"></canvas>
@@ -327,7 +344,7 @@
     </div>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
   <script>
     const apiBase = "/growcontrol-api";
     let currentSensors = [];
@@ -358,6 +375,89 @@
       }
       el.style.display = "block";
       el.textContent = text;
+    }
+
+    function chartLibraryReady() {
+      return typeof Chart !== "undefined";
+    }
+
+    function showChartsStatus(message, isError) {
+      const el = document.getElementById("analytics_charts_status");
+      if (!el) return;
+      if (!message) {
+        el.style.display = "none";
+        el.textContent = "";
+        el.className = "analytics-charts-status";
+        return;
+      }
+      el.className = isError ? "analytics-charts-status err" : "analytics-charts-status";
+      el.textContent = message;
+      el.style.display = "block";
+    }
+
+    function showChartsUnavailable(message) {
+      resetCharts();
+      showChartsStatus(message, true);
+    }
+
+    function ensureChartLibrary() {
+      if (chartLibraryReady()) return true;
+      showChartsUnavailable(
+        "Chart library failed to load. Redeploy the web UI (./deploy_web.sh) and hard-refresh the browser.",
+      );
+      return false;
+    }
+
+    function applySavedAnalyticsRange(rangeSelect, customRow) {
+      const savedRange = window.localStorage.getItem("growcontrol_analytics_range");
+      if (savedRange) rangeSelect.value = savedRange;
+      const savedCustom = window.localStorage.getItem("growcontrol_analytics_custom_range");
+      if (savedCustom) customRangeKey = savedCustom;
+      if (rangeSelect.value === "custom") {
+        customRow.style.display = "flex";
+        activeAnalyticsRange = customRangeKey;
+      } else {
+        activeAnalyticsRange = rangeSelect.value || "7d";
+      }
+    }
+
+    async function loadAnalyticsSensorList() {
+      try {
+        const health = await apiRequest("/api/health");
+        requiresApiKey = Boolean(health.requires_api_key);
+      } catch (_) {}
+
+      try {
+        const v = await apiRequest("/api/version");
+        const verText = document.getElementById("footer_version_text");
+        if (verText) verText.textContent = `v${v.version || "unknown"}`;
+        const upd = (v && v.update) ? v.update : {};
+        const updEl = document.getElementById("footer_update_text");
+        if (updEl) {
+          if (upd && upd.update_available === true) {
+            const n = (typeof upd.behind_count === "number") ? upd.behind_count : null;
+            updEl.textContent = n ? `Update available (${n} commit${n === 1 ? "" : "s"} behind).` : "Update available.";
+          } else if (upd && upd.update_available === false) {
+            updEl.textContent = "Up to date.";
+          } else if (upd && upd.checked_at) {
+            updEl.textContent = `Update check: ${String(upd.checked_at)}.`;
+          } else {
+            updEl.textContent = "";
+          }
+        }
+      } catch (_) {}
+
+      try {
+        const sensorsConfig = await apiRequest("/api/sensors");
+        currentSensors = sensorsConfig.sensors || [];
+        analyticsSensorsSource = "api";
+        updateAnalyticsSensorSelect();
+        setAnalyticsDebug(`Sensors source: API (${currentSensors.length})`);
+        return;
+      } catch (err) {
+        populateSensorsFromStatus();
+        setAnalyticsDebug(`Sensors source: status.json fallback (${currentSensors.length}) — ${err && err.message ? err.message : err}`);
+      }
     }
 
     function populateSensorsFromStatus() {
@@ -570,6 +670,7 @@
     }
 
     function upsertCharts(readings) {
+      if (!ensureChartLibrary()) return;
       const { sanitizedReadings, stats } = sanitizeOnePointSpikes(readings, [
         { field: "moisture", min: 0, max: 100, spikeDelta: 18, stableDelta: 6 },
         { field: "temperature", min: -10, max: 60, spikeDelta: 10, stableDelta: 3.5 },
@@ -638,6 +739,7 @@
         ecMoistureChart.data.datasets[2].data = saltStressMarkers;
         ecMoistureChart.update();
       }
+      showChartsStatus("", false);
     }
 
     function paletteColor(i) {
@@ -646,6 +748,7 @@
     }
 
     function upsertChartsCompare(seriesBySensor) {
+      if (!ensureChartLibrary()) return;
       const sensorIds = Object.keys(seriesBySensor || {});
       if (!sensorIds.length) return;
       const sanitizedSeries = {};
@@ -731,6 +834,7 @@
         ecMoistureChart.data.datasets = ecDatasets;
         ecMoistureChart.update();
       }
+      showChartsStatus("", false);
     }
 
     function streamMatchesSensor(st, sensorId) {
@@ -832,9 +936,16 @@
         return;
       }
       const all = Array.isArray(webcamStreamsCache) ? webcamStreamsCache : [];
-      const streams = all
-        .filter((st) => streamMatchesSensor(st, sensorId))
-        .filter((st) => String(st.stream_url || "").trim());
+      const mapped = all.filter((st) => streamMatchesSensor(st, sensorId));
+      const streams = mapped.filter((st) => String(st.stream_url || "").trim());
+      if (mapped.length && !streams.length) {
+        const hint = document.createElement("p");
+        hint.className = "webcam-hint";
+        hint.innerHTML =
+          "A webcam stream is mapped to this sensor but <strong>Stream URL</strong> is empty. Open <a href=\"Options.html\">Options</a> → Webcam, click <strong>Start MJPEG server</strong> (the URL is saved automatically), then reload this page.";
+        holder.appendChild(hint);
+        return;
+      }
       if (all.length && !streams.length) {
         const hint = document.createElement("p");
         hint.className = "webcam-hint";
@@ -934,6 +1045,8 @@
     async function refreshAnalytics() {
       const forecastEl = document.getElementById("watering_forecast");
       updateChartsHeader();
+      if (!ensureChartLibrary()) return;
+
       let webcamsErr = "";
       try {
         const wc = await apiRequest("/api/settings/webcams");
@@ -953,6 +1066,7 @@
 
         if (!ids.length) {
           forecastEl.textContent = "Pick at least one sensor to compare.";
+          showChartsUnavailable("Select one or more sensors in Compare mode to load charts.");
           renderAnalyticsWebcams("", webcamsErr);
           const holder = document.getElementById("analytics_webcam_holder");
           if (holder) holder.innerHTML = '<p class="webcam-hint">Webcam is only shown in single-sensor mode.</p>';
@@ -969,11 +1083,21 @@
           ));
           const seriesBySensor = {};
           results.forEach((resp, i) => { seriesBySensor[ids[i]] = filterReadingsToRange(resp.readings || [], activeAnalyticsRange); });
+          const totalPoints = Object.values(seriesBySensor).reduce((n, rows) => n + (rows ? rows.length : 0), 0);
+          if (!totalPoints) {
+            forecastEl.textContent = "No historical data yet for the selected sensor(s).";
+            showChartsUnavailable(
+              "No readings in the database for this range. Wait for the collector to poll, or use Refresh selected on Analytics.",
+            );
+            return;
+          }
           const first = seriesBySensor[ids[0]] || [];
           forecastEl.textContent = `Comparing ${ids.length} sensor(s). Forecast shown for ${ids[0]}: ${buildForecast(first, 25)}`;
           upsertChartsCompare(seriesBySensor);
         } catch (histErr) {
-          forecastEl.textContent = (histErr && histErr.message) ? String(histErr.message) : String(histErr);
+          const msg = (histErr && histErr.message) ? String(histErr.message) : String(histErr);
+          forecastEl.textContent = msg;
+          showChartsUnavailable(`Could not load chart history (${msg}). Check that growcontrol-webapi is running.`);
         }
         return;
       }
@@ -988,6 +1112,7 @@
       }
       if (!activeAnalyticsSensorId) {
         forecastEl.textContent = "Select a sensor to view charts.";
+        showChartsUnavailable("No sensor selected. Choose a sensor above, or add one in Options.");
         renderAnalyticsWebcams("", webcamsErr);
         return;
       }
@@ -997,12 +1122,17 @@
         const readings = filterReadingsToRange(data.readings || [], activeAnalyticsRange);
         if (!readings.length) {
           forecastEl.textContent = "No historical data yet for this sensor.";
+          showChartsUnavailable(
+            "No readings stored for this sensor in the selected range. The collector may still be starting — try Refresh selected, or wait for the next poll.",
+          );
           return;
         }
         upsertCharts(readings);
         forecastEl.textContent = buildForecast(readings, 25);
       } catch (histErr) {
-        forecastEl.textContent = (histErr && histErr.message) ? String(histErr.message) : String(histErr);
+        const msg = (histErr && histErr.message) ? String(histErr.message) : String(histErr);
+        forecastEl.textContent = msg;
+        showChartsUnavailable(`Could not load chart history (${msg}). Check growcontrol-webapi and your API key in Options.`);
       }
     }
 
@@ -1240,40 +1370,10 @@
       }
 
       try {
-        const health = await apiRequest("/api/health");
-        requiresApiKey = Boolean(health.requires_api_key);
-        try {
-          const v = await apiRequest("/api/version");
-          const verText = document.getElementById("footer_version_text");
-          if (verText) verText.textContent = `v${v.version || "unknown"}`;
-          const upd = (v && v.update) ? v.update : {};
-          const updEl = document.getElementById("footer_update_text");
-          if (updEl) {
-            if (upd && upd.update_available === true) {
-              const n = (typeof upd.behind_count === "number") ? upd.behind_count : null;
-              updEl.textContent = n ? `Update available (${n} commit${n === 1 ? "" : "s"} behind).` : "Update available.";
-            } else if (upd && upd.update_available === false) {
-              updEl.textContent = "Up to date.";
-            } else if (upd && upd.checked_at) {
-              updEl.textContent = `Update check: ${String(upd.checked_at)}.`;
-            } else {
-              updEl.textContent = "";
-            }
-          }
-        } catch (_) {}
-        const sensorsConfig = await apiRequest("/api/sensors");
-        currentSensors = sensorsConfig.sensors || [];
-        analyticsSensorsSource = "api";
-        updateAnalyticsSensorSelect();
-        setAnalyticsDebug(`Sensors source: API (${currentSensors.length})`);
-        await refreshAnalytics();
-      } catch (err) {
-        // Fallback: populate sensor dropdown from status.json so UI isn't empty if API is down.
-        const msg = (err && err.message) ? String(err.message) : String(err);
-        const forecastEl = document.getElementById("watering_forecast");
-        if (forecastEl) forecastEl.textContent = `API unavailable for analytics history (${msg}).`;
-        populateSensorsFromStatus();
-      }
+        await loadAnalyticsSensorList();
+      } catch (_) {}
+
+      await refreshAnalytics();
 
       // Weather data file (collector writes this when enabled)
       try {
@@ -1315,7 +1415,6 @@
     const refreshBtn = document.getElementById("refresh_selected_btn");
     const refreshMsg = document.getElementById("refresh_selected_msg");
 
-    rangeSelect.value = "7d";
     rangeSelect.addEventListener("change", async () => {
       const v = rangeSelect.value;
       window.localStorage.setItem("growcontrol_analytics_range", v);
@@ -1384,11 +1483,7 @@
       sensorsSearch = window.localStorage.getItem("growcontrol_sensors_search") || "";
       sensorsSearchInput.value = sensorsSearch;
 
-      const savedRange = window.localStorage.getItem("growcontrol_analytics_range");
-      if (savedRange) rangeSelect.value = savedRange;
-      const savedCustom = window.localStorage.getItem("growcontrol_analytics_custom_range");
-      if (savedCustom) customRangeKey = savedCustom;
-      if (rangeSelect.value === "custom") customRow.style.display = "flex";
+      applySavedAnalyticsRange(rangeSelect, customRow);
 
       const savedAnalyticsSensor = window.localStorage.getItem("growcontrol_analytics_sensor_id") || "";
       if (savedAnalyticsSensor) activeAnalyticsSensorId = savedAnalyticsSensor;

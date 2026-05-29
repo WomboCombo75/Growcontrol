@@ -267,9 +267,414 @@ def read_update_status() -> Dict[str, Any]:
         return {"checked_at": None, "update_available": None, "behind_count": None, "branch": None, "error": str(exc)}
 
 
-DEFAULT_MJPG_STREAMER_ARGS = ["-i", "input_uvc.so", "-o", "output_http.so -w www -p {port}"]
 DEFAULT_MJPEG_STREAM_AUTOFILL_PATH = "/?action=stream"
 DEFAULT_MJPEG_HTTP_PORT = 8080
+DEFAULT_MJPG_CAMERA: Dict[str, Any] = {
+    "device": "/dev/video0",
+    "resolution": "1280x720",
+    "fps": 15,
+    "quality": 85,
+    "auto_exposure": "manual",
+    "exposure_time": "800",
+    "gain": "40",
+    "white_balance_automatic": "1",
+    "brightness": "",
+    "contrast": "",
+    "sharpness": "",
+    "saturation": "",
+}
+MJPG_NAMED_RESOLUTIONS = frozenset(
+    {"QSIF", "QCIF", "CGA", "QVGA", "CIF", "VGA", "SVGA", "XGA", "SXGA"}
+)
+MJPG_CAMERA_TUNING_KEYS = ("brightness", "contrast", "sharpness", "saturation")
+MJPG_CAMERA_CLAMP_KEYS = MJPG_CAMERA_TUNING_KEYS + ("gain", "exposure_time")
+V4L2_INT_CTRL_RE = re.compile(
+    r"^\s*(brightness|contrast|saturation|sharpness|gain|exposure_time_absolute)\b.*?min=(-?\d+)\s+max=(-?\d+)",
+    re.IGNORECASE,
+)
+V4L2_AUTO_EXPOSURE_ALIASES = {
+    "manual": "1",
+    "1": "1",
+    "aperture-priority": "3",
+    "aperture_priority": "3",
+    "aperature-priority": "3",
+    "3": "3",
+    "shutter-priority": "2",
+    "shutter_priority": "2",
+    "2": "2",
+    "auto": "0",
+    "0": "0",
+}
+
+
+def query_v4l2_controls(device: str) -> Dict[str, Dict[str, int]]:
+    """Return min/max for supported UVC controls (requires v4l2-ctl from v4l-utils)."""
+    dev = str(device or "").strip()
+    if not re.fullmatch(r"/dev/video[\w]+", dev):
+        return {}
+    if not shutil.which("v4l2-ctl"):
+        return {}
+    try:
+        proc = subprocess.run(
+            ["v4l2-ctl", "-d", dev, "--list-ctrls"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    out: Dict[str, Dict[str, int]] = {}
+    for line in proc.stdout.splitlines():
+        match = V4L2_INT_CTRL_RE.search(line)
+        if not match:
+            continue
+        name = match.group(1).lower()
+        name = match.group(1).lower()
+        out[name] = {"min": int(match.group(2)), "max": int(match.group(3))}
+    if "exposure_time_absolute" in out:
+        out["exposure_time"] = dict(out["exposure_time_absolute"])
+    return out
+
+
+def read_v4l2_control_values(device: str, names: List[str]) -> Dict[str, str]:
+    dev = str(device or "").strip()
+    if not re.fullmatch(r"/dev/video[\w]+", dev) or not names:
+        return {}
+    if not shutil.which("v4l2-ctl"):
+        return {}
+    try:
+        proc = subprocess.run(
+            ["v4l2-ctl", "-d", dev, "-C", ",".join(names)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    out: Dict[str, str] = {}
+    for line in proc.stdout.splitlines():
+        if ":" not in line:
+            continue
+        key, val = line.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+        if key == "exposure_time_absolute":
+            out["exposure_time"] = val.split()[0]
+        out[key] = val.split()[0] if val else ""
+    return out
+
+
+def _normalize_auto_exposure_value(raw: Any) -> str:
+    s = str(raw or "manual").strip().lower()
+    if not s:
+        return "manual"
+    if s in V4L2_AUTO_EXPOSURE_ALIASES:
+        mapped = V4L2_AUTO_EXPOSURE_ALIASES[s]
+        if mapped == "1":
+            return "manual"
+        if mapped == "3":
+            return "aperture-priority"
+        if mapped == "2":
+            return "shutter-priority"
+        if mapped == "0":
+            return "auto"
+    raise ValueError("camera.auto_exposure must be manual, aperture-priority, shutter-priority, or auto")
+
+
+def _auto_exposure_v4l2_value(camera: Dict[str, Any]) -> Optional[str]:
+    ae = _normalize_auto_exposure_value(camera.get("auto_exposure", "manual"))
+    return V4L2_AUTO_EXPOSURE_ALIASES.get(ae)
+
+
+def apply_v4l2_clamps(camera: Dict[str, Any], controls: Dict[str, Dict[str, int]]) -> Tuple[Dict[str, Any], List[str]]:
+    if not controls:
+        return camera, []
+    out = dict(camera)
+    notes: List[str] = []
+    for key in MJPG_CAMERA_CLAMP_KEYS:
+        val = str(out.get(key, "") or "").strip()
+        if not val or val.lower() == "auto":
+            continue
+        spec = controls.get(key)
+        if not spec:
+            continue
+        try:
+            n = int(val)
+        except ValueError:
+            continue
+        lo, hi = int(spec["min"]), int(spec["max"])
+        clamped = max(lo, min(hi, n))
+        if clamped != n:
+            notes.append(f"{key} adjusted from {n} to {clamped} (camera allows {lo}..{hi})")
+            out[key] = str(clamped)
+    return out, notes
+
+
+def apply_v4l2_camera_live(device: str, camera: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+    """Push tuning to the camera via v4l2-ctl while the stream is running."""
+    dev = str(device or "").strip()
+    if not re.fullmatch(r"/dev/video[\w]+", dev):
+        return [], ["invalid device path"]
+    if not shutil.which("v4l2-ctl"):
+        return [], ["v4l2-ctl not installed (try: sudo apt install v4l-utils)"]
+
+    controls = query_v4l2_controls(dev)
+    camera, _ = apply_v4l2_clamps(dict(camera), controls)
+    applied: List[str] = []
+    errors: List[str] = []
+
+    def set_ctrl(v4l_name: str, raw_val: str) -> None:
+        val = str(raw_val).strip()
+        if not val:
+            return
+        try:
+            proc = subprocess.run(
+                ["v4l2-ctl", "-d", dev, f"--set-ctrl={v4l_name}={val}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"{v4l_name}: {exc}")
+            return
+        if proc.returncode != 0:
+            detail = (proc.stderr or proc.stdout or "").strip()
+            errors.append(f"{v4l_name}: {detail or 'set failed'}")
+            return
+        applied.append(f"{v4l_name}={val}")
+
+    wb = str(camera.get("white_balance_automatic", "") or "").strip()
+    if wb in ("0", "1"):
+        set_ctrl("white_balance_automatic", wb)
+
+    ae_val = _auto_exposure_v4l2_value(camera)
+    if ae_val is not None:
+        set_ctrl("auto_exposure", ae_val)
+
+    ae_mode = _normalize_auto_exposure_value(camera.get("auto_exposure", "manual"))
+    exp = str(camera.get("exposure_time", "") or "").strip()
+    if exp and ae_mode in ("manual",):
+        set_ctrl("exposure_time_absolute", exp)
+
+    gain = str(camera.get("gain", "") or "").strip()
+    if gain and gain.lower() != "auto":
+        set_ctrl("gain", gain)
+
+    for key in MJPG_CAMERA_TUNING_KEYS:
+        val = str(camera.get(key, "") or "").strip()
+        if not val:
+            continue
+        if key == "brightness" and val.lower() == "auto":
+            set_ctrl("auto_brightness", "1")
+            continue
+        set_ctrl(key, val)
+
+    return applied, errors
+
+
+def merge_camera_into_settings(settings: Dict[str, Any], camera_raw: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    block = dict(_mjpg_settings_block(settings))
+    camera = normalize_mjpg_camera(camera_raw)
+    controls = query_v4l2_controls(camera["device"])
+    camera, notes = apply_v4l2_clamps(camera, controls)
+    block["camera"] = camera
+    settings["mjpg_streamer"] = block
+    return camera, notes
+
+
+def effective_mjpg_camera(settings: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    block = _mjpg_settings_block(settings)
+    try:
+        camera = normalize_mjpg_camera(block.get("camera"))
+    except ValueError:
+        camera = dict(DEFAULT_MJPG_CAMERA)
+    controls = query_v4l2_controls(camera["device"])
+    return apply_v4l2_clamps(camera, controls)
+
+    block = _mjpg_settings_block(settings)
+    try:
+        camera = normalize_mjpg_camera(block.get("camera"))
+    except ValueError:
+        camera = dict(DEFAULT_MJPG_CAMERA)
+    controls = query_v4l2_controls(camera["device"])
+    return apply_v4l2_clamps(camera, controls)
+
+
+def persist_mjpg_start_options(settings: Dict[str, Any], body: Dict[str, Any]) -> Tuple[Dict[str, Any], List[str]]:
+    """Merge camera + optional webcam stream URL into settings before starting mjpg_streamer."""
+    notes: List[str] = []
+    if "camera" in body and isinstance(body.get("camera"), dict):
+        _, clamp_notes = merge_camera_into_settings(settings, body["camera"])
+        notes.extend(clamp_notes)
+    stream_id = str(body.get("webcam_stream_id", "") or "").strip()
+    stream_url = str(body.get("stream_url", "") or "").strip()
+    if stream_id and stream_url:
+        parsed = urlparse(stream_url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError("stream_url must use http or https")
+        streams = settings.get("webcam_streams")
+        if not isinstance(streams, list):
+            streams = []
+        matched = False
+        for item in streams:
+            if isinstance(item, dict) and str(item.get("id", "")).strip() == stream_id:
+                item["stream_url"] = stream_url
+                matched = True
+                break
+        if matched:
+            settings["webcam_streams"] = streams
+        else:
+            notes.append(f"webcam stream {stream_id!r} not found; stream URL not saved")
+    return settings, notes
+
+
+def normalize_mjpg_camera(raw: Any) -> Dict[str, Any]:
+    """Validate mjpg_streamer.camera settings used to build input_uvc.so arguments."""
+    src = raw if isinstance(raw, dict) else {}
+    out = dict(DEFAULT_MJPG_CAMERA)
+    device = str(src.get("device", out["device"]) or "/dev/video0").strip()
+    if not re.fullmatch(r"/dev/video[\w]+", device):
+        raise ValueError("camera.device must look like /dev/video0")
+    out["device"] = device
+
+    resolution = str(src.get("resolution", out["resolution"]) or "").strip()
+    if not resolution:
+        raise ValueError("camera.resolution is required")
+    res_upper = resolution.upper()
+    if res_upper not in MJPG_NAMED_RESOLUTIONS and not re.fullmatch(r"\d{2,5}x\d{2,5}", resolution):
+        raise ValueError("camera.resolution must be WIDTHxHEIGHT (e.g. 1920x1080) or a named preset")
+    out["resolution"] = res_upper if res_upper in MJPG_NAMED_RESOLUTIONS else resolution
+
+    fps_raw = src.get("fps", out["fps"])
+    if fps_raw is None or fps_raw == "":
+        out["fps"] = ""
+    else:
+        try:
+            fps = int(fps_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("camera.fps must be an integer 1..120 or empty") from exc
+        if fps < 1 or fps > 120:
+            raise ValueError("camera.fps must be between 1 and 120")
+        out["fps"] = fps
+
+    try:
+        quality = int(src.get("quality", out["quality"]))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("camera.quality must be an integer 1..100") from exc
+    if quality < 1 or quality > 100:
+        raise ValueError("camera.quality must be between 1 and 100")
+    out["quality"] = quality
+
+    out["auto_exposure"] = _normalize_auto_exposure_value(src.get("auto_exposure", out["auto_exposure"]))
+
+    exp_raw = src.get("exposure_time", out.get("exposure_time", ""))
+    if exp_raw is None or str(exp_raw).strip() == "":
+        out["exposure_time"] = ""
+    else:
+        try:
+            exp = int(exp_raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("camera.exposure_time must be an integer or empty") from exc
+        if exp < 1 or exp > 100000:
+            raise ValueError("camera.exposure_time is out of range")
+        out["exposure_time"] = str(exp)
+
+    gain_raw = src.get("gain", out.get("gain", ""))
+    if gain_raw is None or str(gain_raw).strip() == "":
+        out["gain"] = ""
+    else:
+        gs = str(gain_raw).strip()
+        if gs.lower() == "auto":
+            out["gain"] = "auto"
+        else:
+            try:
+                gain = int(gs)
+            except ValueError as exc:
+                raise ValueError("camera.gain must be empty, auto, or an integer") from exc
+            if gain < 0 or gain > 10000:
+                raise ValueError("camera.gain is out of range")
+            out["gain"] = str(gain)
+
+    wb_raw = src.get("white_balance_automatic", out.get("white_balance_automatic", ""))
+    if wb_raw is None or str(wb_raw).strip() == "":
+        out["white_balance_automatic"] = ""
+    else:
+        wb = str(wb_raw).strip()
+        if wb not in ("0", "1"):
+            raise ValueError("camera.white_balance_automatic must be 0, 1, or empty")
+        out["white_balance_automatic"] = wb
+
+    for key in MJPG_CAMERA_TUNING_KEYS:
+        val = src.get(key, out.get(key, ""))
+        if val is None:
+            out[key] = ""
+            continue
+        s = str(val).strip()
+        if not s:
+            out[key] = ""
+            continue
+        if s.lower() == "auto":
+            out[key] = "auto"
+            continue
+        try:
+            n = int(s)
+        except ValueError as exc:
+            raise ValueError(f"camera.{key} must be empty, auto, or an integer") from exc
+        if n < -10000 or n > 10000:
+            raise ValueError(f"camera.{key} is out of range")
+        out[key] = str(n)
+    return out
+
+
+def build_input_uvc_plugin_args(camera: Dict[str, Any]) -> str:
+    parts = ["input_uvc.so", f"-d {camera['device']}", f"-r {camera['resolution']}"]
+    fps = camera.get("fps")
+    if fps not in ("", None):
+        parts.append(f"-f {int(fps)}")
+    parts.append(f"-q {int(camera['quality'])}")
+    flag_map = {"brightness": "br", "contrast": "co", "sharpness": "sh", "saturation": "sa"}
+    for key, flag in flag_map.items():
+        val = str(camera.get(key, "") or "").strip()
+        if val:
+            parts.append(f"-{flag} {val}")
+    ae_mode = _normalize_auto_exposure_value(camera.get("auto_exposure", "manual"))
+    exp = str(camera.get("exposure_time", "") or "").strip()
+    if ae_mode == "aperture-priority":
+        parts.append("-ex aperature-priority")
+    elif ae_mode == "shutter-priority":
+        parts.append("-ex shutter-priority")
+    elif ae_mode == "auto":
+        parts.append("-ex auto")
+    elif exp:
+        parts.append(f"-ex {exp}")
+    gain = str(camera.get("gain", "") or "").strip()
+    if gain:
+        parts.append(f"-gain {gain}")
+    return " ".join(parts)
+
+
+def list_video_devices() -> List[Dict[str, str]]:
+    devices: List[Dict[str, str]] = []
+    base = Path("/sys/class/video4linux")
+    if not base.is_dir():
+        return devices
+    for node in sorted(base.iterdir()):
+        if not node.name.startswith("video"):
+            continue
+        label = node.name
+        try:
+            label = (node / "name").read_text(encoding="utf-8").strip() or label
+        except OSError:
+            pass
+        devices.append({"path": f"/dev/{node.name}", "name": label})
+    return devices
 
 
 def normalize_default_http_port(raw: Any) -> int:
@@ -326,10 +731,9 @@ def mjpeg_default_http_port_from_settings(settings: Dict[str, Any]) -> int:
 
 def mjpg_streamer_root_from_settings_only(settings: Dict[str, Any]) -> str:
     block = _mjpg_settings_block(settings)
-    for key in ("mjpg_streamer_root", "streamer_root"):
-        v = block.get(key)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
+    v = block.get("mjpg_streamer_root")
+    if isinstance(v, str) and v.strip():
+        return v.strip()
     return ""
 
 
@@ -405,11 +809,12 @@ def stream_url_tcp_listening(url: str, timeout: float = 0.5) -> Tuple[bool, str]
 def mjpg_streamer_argv(port: int, settings: Dict[str, Any]) -> List[str]:
     raw_block = settings.get("mjpg_streamer")
     raw_block = raw_block if isinstance(raw_block, dict) else {}
-    args_in = raw_block.get("args")
-    if not isinstance(args_in, list) or not args_in:
-        template = DEFAULT_MJPG_STREAMER_ARGS
+    if raw_block.get("use_custom_args") and isinstance(raw_block.get("args"), list) and raw_block["args"]:
+        template = [str(x) for x in raw_block["args"]]
     else:
-        template = [str(x) for x in args_in]
+        camera, _ = effective_mjpg_camera(settings)
+        input_part = build_input_uvc_plugin_args(camera)
+        template = ["-i", input_part, "-o", "output_http.so -w www -p {port}"]
     pstr = str(int(port))
     return [s.replace("{port}", pstr) for s in template]
 
@@ -528,6 +933,51 @@ def stop_mjpeg_on_port(port: int) -> Tuple[bool, str]:
     return False, f"Could not stop listeners on port {port_i}: {err}"
 
 
+def execute_mjpg_start(port: int, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    """Start mjpg_streamer; optionally merge camera/stream URL from body into settings first."""
+    try:
+        settings = load_settings_file()
+    except Exception as exc:  # noqa: BLE001
+        return 500, {"error": f"failed to load settings: {exc}"}
+
+    notes: List[str] = []
+    try:
+        settings, notes = persist_mjpg_start_options(settings, body)
+        write_settings_file(settings)
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        return 500, {"error": f"failed to save settings: {exc}"}
+
+    ok, msg, pid = start_mjpg_streamer_subprocess(port, settings)
+    if not ok:
+        return 500, {"success": False, "error": msg, "port": port}
+
+    camera_out, _ = effective_mjpg_camera(settings)
+    live_applied, live_errors = apply_v4l2_camera_live(camera_out["device"], camera_out)
+    if live_errors:
+        notes.extend(live_errors)
+    return 200, {
+        "success": True,
+        "message": msg,
+        "port": port,
+        "pid": pid,
+        "camera": camera_out,
+        "built_input_args": build_input_uvc_plugin_args(camera_out),
+        "live_applied": live_applied,
+        "warnings": notes,
+        "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
+        "default_http_port": mjpeg_default_http_port_from_settings(settings),
+    }
+
+
+def execute_mjpg_stop(port: int) -> Tuple[int, Dict[str, Any]]:
+    ok, msg = stop_mjpeg_on_port(port)
+    if ok:
+        return 200, {"success": True, "message": msg, "port": port}
+    return 500, {"success": False, "error": msg, "port": port}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802
         json_response(self, 204, {})
@@ -555,6 +1005,40 @@ class Handler(BaseHTTPRequestHandler):
                 {
                     "version": read_version(),
                     "update": read_update_status(),
+                },
+            )
+            return
+
+        if parsed.path == "/api/mjpg/devices":
+            json_response(self, 200, {"devices": list_video_devices()})
+            return
+
+        if parsed.path == "/api/mjpg/controls":
+            query = parse_qs(parsed.query, keep_blank_values=False)
+            device = str(query.get("device", ["/dev/video0"])[0]).strip() or "/dev/video0"
+            if not re.fullmatch(r"/dev/video[\w]+", device):
+                json_response(self, 400, {"error": "device must look like /dev/video0"})
+                return
+            controls = query_v4l2_controls(device)
+            value_names = [
+                "brightness",
+                "contrast",
+                "saturation",
+                "sharpness",
+                "gain",
+                "exposure_time_absolute",
+                "auto_exposure",
+                "white_balance_automatic",
+            ]
+            values = read_v4l2_control_values(device, value_names)
+            json_response(
+                self,
+                200,
+                {
+                    "device": device,
+                    "controls": controls,
+                    "values": values,
+                    "v4l2_ctl_available": bool(shutil.which("v4l2-ctl")),
                 },
             )
             return
@@ -714,6 +1198,10 @@ class Handler(BaseHTTPRequestHandler):
                 args_out = block.get("args")
                 if not isinstance(args_out, list):
                     args_out = None
+                try:
+                    camera_out, _ = effective_mjpg_camera(settings)
+                except ValueError:
+                    camera_out = dict(DEFAULT_MJPG_CAMERA)
                 json_response(
                     self,
                     200,
@@ -723,6 +1211,10 @@ class Handler(BaseHTTPRequestHandler):
                         "resolved_install_dir": str(install_dir),
                         "mjpg_streamer_found": exe.is_file(),
                         "args": args_out,
+                        "use_custom_args": bool(block.get("use_custom_args")),
+                        "camera": camera_out,
+                        "built_input_args": build_input_uvc_plugin_args(camera_out),
+                        "v4l2_controls": query_v4l2_controls(camera_out.get("device", "/dev/video0")),
                         "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
                         "default_http_port": mjpeg_default_http_port_from_settings(settings),
                     },
@@ -960,6 +1452,17 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     json_response(self, 400, {"error": str(exc)})
                     return
+            if "camera" in body:
+                try:
+                    camera = normalize_mjpg_camera(body.get("camera"))
+                    controls = query_v4l2_controls(camera["device"])
+                    camera, clamp_notes = apply_v4l2_clamps(camera, controls)
+                    block["camera"] = camera
+                except ValueError as exc:
+                    json_response(self, 400, {"error": str(exc)})
+                    return
+            if "use_custom_args" in body:
+                block["use_custom_args"] = bool(body.get("use_custom_args"))
             settings["mjpg_streamer"] = block
             try:
                 write_settings_file(settings)
@@ -968,6 +1471,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             install_dir = resolved_mjpg_install_dir(settings)
             exe = install_dir / "mjpg_streamer"
+            camera_out, clamp_notes = effective_mjpg_camera(settings)
             json_response(
                 self,
                 200,
@@ -977,6 +1481,10 @@ class Handler(BaseHTTPRequestHandler):
                     "mjpg_streamer_root_saved": block.get("mjpg_streamer_root", ""),
                     "resolved_install_dir": str(install_dir),
                     "mjpg_streamer_found": exe.is_file(),
+                    "camera": camera_out,
+                    "built_input_args": build_input_uvc_plugin_args(camera_out),
+                    "v4l2_controls": query_v4l2_controls(camera_out.get("device", "/dev/video0")),
+                    "warnings": clamp_notes,
                     "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
                     "default_http_port": mjpeg_default_http_port_from_settings(settings),
                 },
@@ -1110,6 +1618,42 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         # Prefer POST /api/mjpg + JSON {"run":"start"|"stop","port":N} — avoids proxies/WAFs that block "/stop" in the path.
+        if path == "/api/mjpg/controls/apply":
+            camera_raw = body.get("camera")
+            if not isinstance(camera_raw, dict):
+                json_response(self, 400, {"error": "camera object is required"})
+                return
+            save = bool(body.get("save", True))
+            try:
+                settings = load_settings_file()
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": f"failed to load settings: {exc}"})
+                return
+            try:
+                camera, notes = merge_camera_into_settings(settings, camera_raw)
+                applied, errors = apply_v4l2_camera_live(camera["device"], camera)
+                if save:
+                    write_settings_file(settings)
+            except ValueError as exc:
+                json_response(self, 400, {"error": str(exc)})
+                return
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": str(exc)})
+                return
+            json_response(
+                self,
+                200,
+                {
+                    "success": not errors,
+                    "camera": camera,
+                    "applied": applied,
+                    "errors": errors,
+                    "warnings": notes,
+                    "built_input_args": build_input_uvc_plugin_args(camera),
+                },
+            )
+            return
+
         if path == "/api/mjpg":
             try:
                 port = int(body.get("port"))
@@ -1118,78 +1662,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             run = str(body.get("run", "")).strip().lower()
             if run == "start":
-                try:
-                    settings = load_settings_file()
-                except Exception as exc:  # noqa: BLE001
-                    json_response(self, 500, {"error": f"failed to load settings: {exc}"})
-                    return
-                ok, msg, pid = start_mjpg_streamer_subprocess(port, settings)
-                if ok:
-                    json_response(
-                        self,
-                        200,
-                        {
-                            "success": True,
-                            "message": msg,
-                            "port": port,
-                            "pid": pid,
-                            "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
-                            "default_http_port": mjpeg_default_http_port_from_settings(settings),
-                        },
-                    )
-                else:
-                    json_response(self, 500, {"success": False, "error": msg, "port": port})
+                status, payload = execute_mjpg_start(port, body)
+                json_response(self, status, payload)
                 return
             if run == "stop":
-                ok, msg = stop_mjpeg_on_port(port)
-                if ok:
-                    json_response(self, 200, {"success": True, "message": msg, "port": port})
-                else:
-                    json_response(self, 500, {"success": False, "error": msg, "port": port})
+                status, payload = execute_mjpg_stop(port)
+                json_response(self, status, payload)
                 return
             json_response(self, 400, {"error": 'invalid run; use "start" or "stop"'})
-            return
-
-        if path in ("/api/mjpg-streamer/start", "/api/mjpg/start"):
-            try:
-                settings = load_settings_file()
-            except Exception as exc:  # noqa: BLE001
-                json_response(self, 500, {"error": f"failed to load settings: {exc}"})
-                return
-            try:
-                port = int(body.get("port"))
-            except (TypeError, ValueError):
-                json_response(self, 400, {"error": "missing or invalid port (integer 1..65535)"})
-                return
-            ok, msg, pid = start_mjpg_streamer_subprocess(port, settings)
-            if ok:
-                json_response(
-                    self,
-                    200,
-                    {
-                        "success": True,
-                        "message": msg,
-                        "port": port,
-                        "pid": pid,
-                        "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
-                        "default_http_port": mjpeg_default_http_port_from_settings(settings),
-                    },
-                )
-            else:
-                json_response(self, 500, {"success": False, "error": msg, "port": port})
-            return
-
-        if path in ("/api/mjpg-streamer/stop", "/api/mjpg/stop"):
-            try:
-                port = int(body.get("port"))
-            except (TypeError, ValueError):
-                json_response(self, 400, {"error": "missing or invalid port (integer 1..65535)"})
-                return
-            ok, msg = stop_mjpeg_on_port(port)
-            if ok:
-                json_response(self, 200, {"success": True, "message": msg, "port": port})
-            else:
-                json_response(self, 500, {"success": False, "error": msg, "port": port})
             return
 
         if path == "/api/restart":

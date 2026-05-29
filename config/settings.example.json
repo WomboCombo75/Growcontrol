@@ -20,6 +20,20 @@
     "mjpg_streamer_root": "",
     "default_http_port": 8080,
     "default_stream_url_path": "/?action=stream",
-    "args": ["-i", "input_uvc.so", "-o", "output_http.so -w www -p {port}"]
+    "camera": {
+      "device": "/dev/video0",
+      "resolution": "1280x720",
+      "fps": 15,
+      "quality": 85,
+      "auto_exposure": "manual",
+      "exposure_time": "800",
+      "gain": "40",
+      "white_balance_automatic": "1",
+      "brightness": "",
+      "contrast": "",
+      "sharpness": "",
+      "saturation": ""
+    },
+    "use_custom_args": false
   }
 }

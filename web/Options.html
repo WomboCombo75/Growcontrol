@@ -59,11 +59,45 @@
     .wc-start-row { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding-top: 4px; border-top: 1px solid #eaeef2; }
     .wc-mjpeg-btns { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .wc-start-row .wc-start-hint { font-size: 13px; color: #57606a; line-height: 1.4; max-width: 100%; }
+    .wc-camera-panel { margin-top: 14px; padding-top: 14px; border-top: 1px solid #d0d7de; }
+    .wc-camera-panel h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+    .wc-camera-grid { display: grid; gap: 10px; grid-template-columns: 1fr; }
+    @media (min-width: 540px) {
+      .wc-camera-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .wc-camera-grid .wc-field-span2 { grid-column: 1 / -1; }
+    .wc-tuning-grid { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+    @media (min-width: 540px) {
+      .wc-tuning-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .wc-exposure-grid { display: grid; gap: 10px; grid-template-columns: 1fr; margin-bottom: 10px; }
+    @media (min-width: 540px) {
+      .wc-exposure-grid { grid-template-columns: repeat(3, 1fr); }
+    }
+    #mjpg_live_status.ok { color: #116329; }
+    #mjpg_live_status.err { color: #b42318; }
+    #mjpg_live_status.pending { color: #57606a; }
     @media (min-width: 540px) {
       .wc-start-row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
       .wc-start-row .wc-start-hint { flex: 1 1 200px; min-width: 0; }
     }
     .wc-stream-box .btn.danger { justify-self: start; }
+    .options-tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid #d0d7de; }
+    .options-tab {
+      border: none;
+      background: transparent;
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      font-weight: 600;
+      color: #57606a;
+    }
+    .options-tab.active { border-bottom-color: #0969da; color: #0969da; }
+    .options-panel[hidden] { display: none !important; }
+    .section-message { margin-top: 12px; font-style: normal; min-height: 1.25em; }
+    .section-message.err { color: #b42318; }
+    .section-message.ok { color: #116329; }
   </style>
 </head>
 <body>
@@ -109,13 +143,44 @@
     </div>
 
     <div class="card">
-      <h2>Sensors</h2>
-      <p class="empty" style="margin:0 0 12px 0;font-style:normal;">
-        <strong>Refresh now</strong> connects to the sensor over Bluetooth, reads current values (moisture, temperature, light, conductivity, battery),
-        then updates <code>status.json</code> and the history database. This is an immediate one-off read — not the scheduled collector poll.
-      </p>
-      <div id="sensors" class="grid"></div>
-      <p id="empty_message" class="empty">No sensors configured yet.</p>
+      <div class="options-tabs" role="tablist" aria-label="Sensor management">
+        <button type="button" class="options-tab active" data-options-tab="sensors" role="tab" aria-selected="true" aria-controls="options_panel_sensors">Sensors</button>
+        <button type="button" class="options-tab" data-options-tab="onboard" role="tab" aria-selected="false" aria-controls="options_panel_onboard">Onboard sensor</button>
+      </div>
+
+      <div id="options_panel_sensors" class="options-panel" role="tabpanel">
+        <p class="empty" style="margin:0 0 12px 0;font-style:normal;">
+          <strong>Refresh now</strong> connects to the sensor over Bluetooth, reads current values (moisture, temperature, light, conductivity, battery),
+          then updates <code>status.json</code> and the history database. This is an immediate one-off read — not the scheduled collector poll.
+        </p>
+        <div id="sensors" class="grid"></div>
+        <p id="empty_message" class="empty">No sensors configured yet.</p>
+        <div id="sensors_message" class="section-message empty" aria-live="polite"></div>
+      </div>
+
+      <div id="options_panel_onboard" class="options-panel" role="tabpanel" hidden>
+        <div class="controls">
+          <label for="api_key">API Key (optional)</label>
+          <input id="api_key" placeholder="leave empty unless configured" />
+          <button id="scan_btn" class="btn primary" type="button">Scan BLE Devices</button>
+          <label for="scan_select">Discovered devices</label>
+          <select id="scan_select"><option value="">-- no scan results --</option></select>
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="show_all_devices" />
+            Show all devices (not only likely Flora)
+          </label>
+          <label for="sensor_id">Sensor ID</label>
+          <input id="sensor_id" placeholder="plant_1" />
+          <label for="sensor_name">Sensor Name</label>
+          <input id="sensor_name" placeholder="My Plant" />
+          <label for="sensor_mac">Sensor MAC</label>
+          <input id="sensor_mac" placeholder="AA:BB:CC:DD:EE:FF" />
+          <button id="verify_btn" class="btn" type="button">Verify Sensor</button>
+          <div id="verify_result" class="empty"></div>
+          <button id="add_btn" class="btn primary" type="button">Add Sensor</button>
+          <div id="onboard_message" class="section-message empty" aria-live="polite"></div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
@@ -184,12 +249,91 @@
             <span class="pill neutral">mjpg-streamer</span>
           </div>
           <p class="wc-tip-line">You can leave <strong>Stream URL</strong> empty: <strong>Start MJPEG server</strong> fills it automatically (host from how you opened this page, port from the URL or <code>mjpg_streamer.default_http_port</code> in <code>config/settings.json</code>, path from <code>default_stream_url_path</code>). Override by typing a URL. Use your Pi’s LAN host when you use the Dashboard from another device.</p>
-          <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Click <strong>Save webcam streams</strong> after edits. Set the install path below, then <strong>Save MJPEG install path</strong>.</p>
+          <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Click <strong>Save webcam streams</strong> after edits. Set the install path and camera options below, then <strong>Save MJPEG settings</strong>.</p>
         </div>
         <label for="mjpg_streamer_root">mjpg-streamer install directory</label>
-        <input id="mjpg_streamer_root" type="text" placeholder="/path/to/mjpg-streamer-experimental" style="max-width:100%;" />
+        <input id="mjpg_streamer_root" type="text" placeholder="/home/pi/new-mjpg-streamer" style="max-width:100%;" />
         <div id="mjpg_streamer_status" class="empty" style="margin-top:6px;font-size:13px;"></div>
-        <button id="save_mjpg_streamer_btn" type="button" class="btn" data-write="1">Save MJPEG install path</button>
+        <button id="save_mjpg_streamer_btn" type="button" class="btn" data-write="1">Save MJPEG settings</button>
+        <div class="wc-camera-panel">
+          <h3>Camera capture</h3>
+          <p class="wc-tip-line">Resolution and FPS need <strong>Stop → Start</strong>. Exposure, gain, and image tuning below apply <strong>live</strong> while the stream runs (about half a second after you change a value).</p>
+          <p class="wc-tip-line"><strong>JPEG quality</strong> mainly affects software re-encoding; many USB cameras output MJPEG directly — exposure and gain matter most in low light.</p>
+          <div class="wc-camera-grid">
+            <div class="wc-field wc-field-span2">
+              <label for="mjpg_device">Video device</label>
+              <input id="mjpg_device" type="text" list="mjpg_device_list" placeholder="/dev/video0" />
+              <datalist id="mjpg_device_list"></datalist>
+            </div>
+            <div class="wc-field">
+              <label for="mjpg_resolution_preset">Resolution</label>
+              <select id="mjpg_resolution_preset">
+                <option value="640x480">640×480 (VGA)</option>
+                <option value="1280x720">1280×720 (720p)</option>
+                <option value="1920x1080">1920×1080 (1080p)</option>
+                <option value="3840x2160">3840×2160 (4K)</option>
+                <option value="custom">Custom…</option>
+              </select>
+            </div>
+            <div class="wc-field" id="mjpg_resolution_custom_row" style="display:none;">
+              <label for="mjpg_resolution_custom">Custom resolution</label>
+              <input id="mjpg_resolution_custom" type="text" placeholder="1920x1080" />
+            </div>
+            <div class="wc-field">
+              <label for="mjpg_fps">FPS (frames per second)</label>
+              <input id="mjpg_fps" type="number" min="1" max="120" placeholder="15" />
+            </div>
+            <div class="wc-field">
+              <label for="mjpg_quality">JPEG quality (1–100)</label>
+              <input id="mjpg_quality" type="number" min="1" max="100" value="85" />
+            </div>
+            <div class="wc-field wc-field-span2">
+              <label>Exposure &amp; gain</label>
+              <div class="wc-exposure-grid">
+                <div class="wc-field">
+                  <label for="mjpg_auto_exposure">Exposure mode</label>
+                  <select id="mjpg_auto_exposure">
+                    <option value="manual">Manual</option>
+                    <option value="aperture-priority">Aperture priority</option>
+                    <option value="shutter-priority">Shutter priority</option>
+                    <option value="auto">Auto (if supported)</option>
+                  </select>
+                </div>
+                <div class="wc-field">
+                  <label for="mjpg_exposure_time">Exposure time</label>
+                  <input id="mjpg_exposure_time" type="number" placeholder="800" />
+                </div>
+                <div class="wc-field">
+                  <label for="mjpg_gain">Gain</label>
+                  <input id="mjpg_gain" type="number" placeholder="40" />
+                </div>
+              </div>
+            </div>
+            <div class="wc-field wc-field-span2">
+              <label>Image tuning <span class="empty" style="font-weight:normal;">(camera-specific ranges from <code>v4l2-ctl</code>)</span></label>
+              <div class="wc-tuning-grid">
+                <div class="wc-field">
+                  <label for="mjpg_brightness">Brightness</label>
+                  <input id="mjpg_brightness" type="number" placeholder="auto" />
+                </div>
+                <div class="wc-field">
+                  <label for="mjpg_contrast">Contrast</label>
+                  <input id="mjpg_contrast" type="number" placeholder="default" />
+                </div>
+                <div class="wc-field">
+                  <label for="mjpg_sharpness">Sharpness</label>
+                  <input id="mjpg_sharpness" type="number" placeholder="default" />
+                </div>
+                <div class="wc-field">
+                  <label for="mjpg_saturation">Saturation</label>
+                  <input id="mjpg_saturation" type="number" placeholder="default" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="mjpg_live_status" class="empty" style="margin-top:8px;font-size:13px;" aria-live="polite"></div>
+          <div id="mjpg_camera_preview" class="empty" style="margin-top:8px;font-size:13px;color:#57606a;"></div>
+        </div>
         <p class="empty" style="margin:0 0 6px 0;">Streams show in <strong>Dashboard → Analytics</strong> for mapped sensors.</p>
         <div id="webcam_streams_editor"></div>
         <div class="row">
@@ -237,30 +381,6 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>Onboard Sensor</h2>
-      <div class="controls">
-        <label for="api_key">API Key (optional)</label>
-        <input id="api_key" placeholder="leave empty unless configured" />
-        <button id="scan_btn" class="btn primary" type="button">Scan BLE Devices</button>
-        <label for="scan_select">Discovered devices</label>
-        <select id="scan_select"><option value="">-- no scan results --</option></select>
-        <label style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="show_all_devices" />
-          Show all devices (not only likely Flora)
-        </label>
-        <label for="sensor_id">Sensor ID</label>
-        <input id="sensor_id" placeholder="plant_1" />
-        <label for="sensor_name">Sensor Name</label>
-        <input id="sensor_name" placeholder="My Plant" />
-        <label for="sensor_mac">Sensor MAC</label>
-        <input id="sensor_mac" placeholder="AA:BB:CC:DD:EE:FF" />
-        <button id="verify_btn" class="btn" type="button">Verify Sensor</button>
-        <div id="verify_result" class="empty"></div>
-        <button id="add_btn" class="btn primary" type="button">Add Sensor</button>
-        <div id="onboard_message" class="empty"></div>
-      </div>
-    </div>
   </div>
 
   <script>
@@ -272,7 +392,11 @@
     let lastSensorsForWebcam = [];
     /** From GET /api/settings/mjpg-streamer — used to auto-fill Stream URL after Start. */
     let mjpegAutofillFromApi = { default_stream_url_path: "/?action=stream", default_http_port: 8080 };
+    let mjpgV4l2Controls = {};
+    let mjpgLiveApplyTimer = null;
+    let mjpgLiveApplyInFlight = false;
     const lastRefreshFeedback = {};
+    const SENSOR_ID_MISSING_MSG = "Sensor has no id; refresh the page to repair it.";
 
     function formatProbeSummary(probe) {
       if (!probe || typeof probe !== "object") return "no readings returned";
@@ -313,6 +437,256 @@
         const n = Math.floor(Number(hp));
         if (n >= 1 && n <= 65535) mjpegAutofillFromApi.default_http_port = n;
       }
+    }
+
+    async function refreshMjpgControlRanges(device) {
+      const dev = (device || "/dev/video0").trim() || "/dev/video0";
+      mjpgV4l2Controls = {};
+      let data = null;
+      try {
+        const q = new URLSearchParams({ device: dev });
+        data = await apiRequest(`/api/mjpg/controls?${q.toString()}`);
+        mjpgV4l2Controls = (data && data.controls) ? data.controls : {};
+      } catch (_) {
+        mjpgV4l2Controls = {};
+      }
+      applyMjpgControlRangeHints();
+      if (data && data.values && typeof data.values === "object") {
+        applyMjpgControlValuesFromDevice(data.values);
+      }
+    }
+
+    function applyMjpgControlValuesFromDevice(values) {
+      const map = [
+        ["mjpg_exposure_time", "exposure_time"],
+        ["mjpg_gain", "gain"],
+        ["mjpg_brightness", "brightness"],
+        ["mjpg_contrast", "contrast"],
+        ["mjpg_sharpness", "sharpness"],
+        ["mjpg_saturation", "saturation"],
+      ];
+      map.forEach(([id, key]) => {
+        const el = document.getElementById(id);
+        const v = values[key];
+        if (el && v != null && String(v).trim() !== "" && !el.dataset.userEdited) {
+          el.value = String(v).split(" ")[0];
+        }
+      });
+      const aeEl = document.getElementById("mjpg_auto_exposure");
+      const aeRaw = values.auto_exposure;
+      if (aeEl && aeRaw != null && String(aeRaw).trim() !== "" && !aeEl.dataset.userEdited) {
+        const n = String(aeRaw).split(" ")[0];
+        if (n === "1") aeEl.value = "manual";
+        else if (n === "3") aeEl.value = "aperture-priority";
+        else if (n === "2") aeEl.value = "shutter-priority";
+        else if (n === "0") aeEl.value = "auto";
+      }
+    }
+
+    function setMjpgLiveStatus(message, tone) {
+      const el = document.getElementById("mjpg_live_status");
+      if (!el) return;
+      el.className = `empty ${tone || ""}`.trim();
+      el.textContent = message || "";
+    }
+
+    async function applyMjpgTuningLive() {
+      if (writeLocked) return;
+      if (mjpgLiveApplyInFlight) {
+        scheduleMjpgLiveApply();
+        return;
+      }
+      mjpgLiveApplyInFlight = true;
+      setMjpgLiveStatus("Applying…", "pending");
+      try {
+        const camera = collectMjpgCameraPayload();
+        const data = await apiRequest("/api/mjpg/controls/apply", "POST", { camera, save: true });
+        if (data.camera) {
+          const preview = document.getElementById("mjpg_camera_preview");
+          if (preview && data.built_input_args) {
+            preview.textContent = `Start command uses: ${data.built_input_args}`;
+          }
+        }
+        let msg = "Applied live.";
+        if (data.warnings && data.warnings.length) msg += " " + data.warnings.join(" ");
+        if (data.errors && data.errors.length) msg += " " + data.errors.join(" ");
+        setMjpgLiveStatus(msg, (data.errors && data.errors.length) ? "err" : "ok");
+      } catch (err) {
+        setMjpgLiveStatus(String(err), "err");
+      } finally {
+        mjpgLiveApplyInFlight = false;
+      }
+    }
+
+    function scheduleMjpgLiveApply() {
+      clearTimeout(mjpgLiveApplyTimer);
+      mjpgLiveApplyTimer = setTimeout(() => { void applyMjpgTuningLive(); }, 500);
+    }
+
+    function bindMjpgLiveTuningInputs() {
+      const ids = [
+        "mjpg_auto_exposure",
+        "mjpg_exposure_time",
+        "mjpg_gain",
+        "mjpg_brightness",
+        "mjpg_contrast",
+        "mjpg_sharpness",
+        "mjpg_saturation",
+      ];
+      ids.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el || el.dataset.liveBound) return;
+        el.dataset.liveBound = "1";
+        const mark = () => { el.dataset.userEdited = "1"; scheduleMjpgLiveApply(); };
+        el.addEventListener("input", mark);
+        el.addEventListener("change", mark);
+      });
+    }
+
+    function applyMjpgControlRangeHints() {
+      const map = [
+        ["mjpg_brightness", "brightness", "auto"],
+        ["mjpg_contrast", "contrast", "default"],
+        ["mjpg_sharpness", "sharpness", "default"],
+        ["mjpg_saturation", "saturation", "default"],
+        ["mjpg_exposure_time", "exposure_time", "default"],
+        ["mjpg_gain", "gain", "default"],
+      ];
+      map.forEach(([id, key, emptyPh]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const spec = mjpgV4l2Controls[key];
+        if (spec && Number.isFinite(spec.min) && Number.isFinite(spec.max)) {
+          el.min = String(spec.min);
+          el.max = String(spec.max);
+          el.placeholder = `${spec.min}…${spec.max}`;
+        } else {
+          el.removeAttribute("min");
+          el.removeAttribute("max");
+          el.placeholder = emptyPh;
+        }
+      });
+      const preview = document.getElementById("mjpg_camera_preview");
+      if (!preview) return;
+      const parts = Object.entries(mjpgV4l2Controls).map(([k, v]) => `${k} ${v.min}…${v.max}`);
+      if (parts.length) {
+        preview.dataset.rangeHint = parts.join(", ");
+      }
+    }
+
+    function appendMjpgWarnings(msgEl, warnings) {
+      if (!msgEl || !warnings || !warnings.length) return;
+      const extra = warnings.join(" ");
+      msgEl.textContent = msgEl.textContent ? `${msgEl.textContent} ${extra}` : extra;
+    }
+
+    const MJPG_RESOLUTION_PRESETS = ["640x480", "1280x720", "1920x1080", "3840x2160"];
+
+    function readOptionalTuningInput(id) {
+      const el = document.getElementById(id);
+      if (!el) return "";
+      return String(el.value ?? "").trim();
+    }
+
+    function syncMjpgResolutionCustomVisibility() {
+      const preset = document.getElementById("mjpg_resolution_preset");
+      const row = document.getElementById("mjpg_resolution_custom_row");
+      if (!preset || !row) return;
+      row.style.display = preset.value === "custom" ? "flex" : "none";
+    }
+
+    function setMjpgResolutionUi(resolution) {
+      const presetEl = document.getElementById("mjpg_resolution_preset");
+      const customEl = document.getElementById("mjpg_resolution_custom");
+      const res = String(resolution || "1280x720").trim();
+      if (presetEl) {
+        if (MJPG_RESOLUTION_PRESETS.includes(res)) {
+          presetEl.value = res;
+        } else {
+          presetEl.value = "custom";
+          if (customEl) customEl.value = res;
+        }
+      }
+      syncMjpgResolutionCustomVisibility();
+    }
+
+    function readMjpgResolutionValue() {
+      const presetEl = document.getElementById("mjpg_resolution_preset");
+      const customEl = document.getElementById("mjpg_resolution_custom");
+      if (!presetEl) return "1280x720";
+      if (presetEl.value === "custom") {
+        return (customEl && customEl.value.trim()) || "1280x720";
+      }
+      return presetEl.value || "1280x720";
+    }
+
+    function populateMjpgCameraForm(mj) {
+      const cam = (mj && mj.camera && typeof mj.camera === "object") ? mj.camera : {};
+      const devEl = document.getElementById("mjpg_device");
+      if (devEl) devEl.value = cam.device || "/dev/video0";
+      setMjpgResolutionUi(cam.resolution || "1280x720");
+      const fpsEl = document.getElementById("mjpg_fps");
+      if (fpsEl) fpsEl.value = cam.fps === "" || cam.fps == null ? "" : String(cam.fps);
+      const qEl = document.getElementById("mjpg_quality");
+      if (qEl) qEl.value = cam.quality != null ? String(cam.quality) : "85";
+      const aeEl = document.getElementById("mjpg_auto_exposure");
+      if (aeEl) aeEl.value = cam.auto_exposure || "manual";
+      const expEl = document.getElementById("mjpg_exposure_time");
+      if (expEl) expEl.value = cam.exposure_time != null ? String(cam.exposure_time) : "";
+      const gainEl = document.getElementById("mjpg_gain");
+      if (gainEl) gainEl.value = cam.gain != null ? String(cam.gain) : "";
+      const map = [
+        ["mjpg_brightness", "brightness"],
+        ["mjpg_contrast", "contrast"],
+        ["mjpg_sharpness", "sharpness"],
+        ["mjpg_saturation", "saturation"],
+      ];
+      map.forEach(([id, key]) => {
+        const el = document.getElementById(id);
+        if (el) el.value = cam[key] != null ? String(cam[key]) : "";
+      });
+      const preview = document.getElementById("mjpg_camera_preview");
+      if (preview && mj && mj.built_input_args) {
+        let text = `Start command uses: ${mj.built_input_args}`;
+        const hint = preview.dataset.rangeHint;
+        if (hint) text += ` — camera ranges: ${hint}`;
+        preview.textContent = text;
+      }
+      void refreshMjpgControlRanges(cam.device || "/dev/video0");
+    }
+
+    function collectMjpgCameraPayload() {
+      return {
+        device: (document.getElementById("mjpg_device") && document.getElementById("mjpg_device").value.trim()) || "/dev/video0",
+        resolution: readMjpgResolutionValue(),
+        fps: (() => {
+          const v = document.getElementById("mjpg_fps") && document.getElementById("mjpg_fps").value.trim();
+          return v === "" ? "" : Math.floor(Number(v));
+        })(),
+        quality: Math.floor(Number(document.getElementById("mjpg_quality") && document.getElementById("mjpg_quality").value) || 85),
+        auto_exposure: (document.getElementById("mjpg_auto_exposure") && document.getElementById("mjpg_auto_exposure").value) || "manual",
+        exposure_time: readOptionalTuningInput("mjpg_exposure_time"),
+        gain: readOptionalTuningInput("mjpg_gain"),
+        brightness: readOptionalTuningInput("mjpg_brightness"),
+        contrast: readOptionalTuningInput("mjpg_contrast"),
+        sharpness: readOptionalTuningInput("mjpg_sharpness"),
+        saturation: readOptionalTuningInput("mjpg_saturation"),
+      };
+    }
+
+    async function refreshMjpgDeviceList() {
+      const list = document.getElementById("mjpg_device_list");
+      if (!list) return;
+      list.innerHTML = "";
+      try {
+        const data = await apiRequest("/api/mjpg/devices");
+        (data.devices || []).forEach((d) => {
+          const opt = document.createElement("option");
+          opt.value = d.path || "";
+          opt.label = d.name ? `${d.path} — ${d.name}` : d.path;
+          list.appendChild(opt);
+        });
+      } catch (_) {}
     }
 
     function getMjpegAutofillPath() {
@@ -389,10 +763,32 @@
       return `${d}d ago`;
     }
 
-    function showMessage(message, isError) {
-      const box = document.getElementById("onboard_message");
-      box.style.color = isError ? "#b42318" : "#116329";
+    function showSectionMessage(boxId, message, isError) {
+      const box = document.getElementById(boxId);
+      if (!box) return;
+      box.className = `section-message ${isError ? "err" : "ok"}`;
       box.textContent = message;
+    }
+
+    function showSensorsMessage(message, isError) {
+      showOptionsTab("sensors");
+      showSectionMessage("sensors_message", message, isError);
+    }
+
+    function showOnboardMessage(message, isError) {
+      showOptionsTab("onboard");
+      showSectionMessage("onboard_message", message, isError);
+    }
+
+    function showOptionsTab(tabName) {
+      document.querySelectorAll(".options-tab").forEach((btn) => {
+        const active = btn.getAttribute("data-options-tab") === tabName;
+        btn.classList.toggle("active", active);
+        btn.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      document.querySelectorAll(".options-panel").forEach((panel) => {
+        panel.hidden = panel.id !== `options_panel_${tabName}`;
+      });
     }
 
     function restoreChartTimezoneUI() {
@@ -533,16 +929,26 @@
           const p = resolvedMjpegPortForRow(urlRaw);
           startBtn.disabled = true;
           try {
-            const data = await apiRequest("/api/mjpg", "POST", { run: "start", port: p });
-            syncMjpegAutofillFromApi(data);
-            msg.style.color = "#116329";
+            const camera = collectMjpgCameraPayload();
             const assembled = buildAutofilledStreamUrl(p);
+            const streamId = (webcamEditRows[idx] && webcamEditRows[idx].id) || "";
+            const data = await apiRequest("/api/mjpg", "POST", {
+              run: "start",
+              port: p,
+              camera,
+              webcam_stream_id: streamId,
+              stream_url: assembled,
+            });
+            syncMjpegAutofillFromApi(data);
+            if (data.camera) populateMjpgCameraForm({ camera: data.camera, built_input_args: data.built_input_args });
+            msg.style.color = "#116329";
             if (assembled) {
               applyWebcamRowStreamUrlAfterStart(idx, assembled);
-              msg.textContent = `${data.message || `Started on port ${p}.`} Stream URL filled automatically.`;
+              msg.textContent = `${data.message || `Started on port ${p}.`} Stream URL saved for Dashboard.`;
             } else {
               msg.textContent = data.message || `Started on port ${p}.`;
             }
+            appendMjpgWarnings(msg, data.warnings);
           } catch (err) {
             msg.style.color = "#b42318";
             msg.textContent = String(err);
@@ -599,7 +1005,7 @@
       if (hintEl) {
         const fromUrl = inferMjpegPortFromUrl(coerceHttpStreamUrl(urlEl ? urlEl.value : ""));
         const src = fromUrl != null ? "Stream URL" : `default_http_port (${port})`;
-        hintEl.textContent = `Start / stop use TCP port ${port} (${src}). Stop sends SIGTERM via fuser. After Start, Stream URL is filled from settings.`;
+        hintEl.textContent = `Start / stop use TCP port ${port} (${src}). Stop, save camera settings, then Start again after changing resolution or tuning.`;
       }
     }
 
@@ -772,7 +1178,7 @@
         button.addEventListener("click", async () => {
           const id = button.getAttribute("data-id");
           if (!id) {
-            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            showSensorsMessage(SENSOR_ID_MISSING_MSG, true);
             return;
           }
           button.disabled = true;
@@ -782,6 +1188,7 @@
             "Step 1/2: Connecting via Bluetooth and reading the sensor (this can take up to 25 seconds)…",
             "pending",
           );
+          showSensorsMessage(`Refreshing ${id}…`, false);
           try {
             const data = await apiRequest(`/api/sensors/${encodeURIComponent(id)}/refresh`, "POST", { timeout: 25 });
             const probe = data.probe || {};
@@ -790,9 +1197,11 @@
               `Step 2/2: Done — ${formatProbeSummary(probe)}. Updated status.json and history database.`,
               "ok",
             );
+            showSensorsMessage(`Refreshed ${id}.`, false);
             await refresh();
           } catch (err) {
             showSensorRefreshStatus(id, `Refresh failed: ${String(err)}`, "err");
+            showSensorsMessage(`Refresh failed: ${String(err)}`, true);
             await refresh();
           } finally {
             button.disabled = false;
@@ -806,21 +1215,21 @@
           const id = button.getAttribute("data-id");
           const currentName = button.getAttribute("data-current-name") || "";
           if (!id) {
-            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            showSensorsMessage(SENSOR_ID_MISSING_MSG, true);
             return;
           }
           const name = window.prompt("New sensor name:", currentName);
           if (name === null) return;
           if (!name.trim()) {
-            showMessage("Sensor name cannot be empty.", true);
+            showSensorsMessage("Sensor name cannot be empty.", true);
             return;
           }
           try {
             await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { name: name.trim(), restart: false });
-            showMessage(`Renamed ${id}`, false);
+            showSensorsMessage(`Renamed ${id}`, false);
             await refresh();
           } catch (err) {
-            showMessage(String(err), true);
+            showSensorsMessage(String(err), true);
           }
         });
       });
@@ -830,15 +1239,15 @@
           const id = button.getAttribute("data-id");
           const enabled = button.getAttribute("data-enabled") !== "true";
           if (!id) {
-            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            showSensorsMessage(SENSOR_ID_MISSING_MSG, true);
             return;
           }
           try {
             await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { enabled, restart: false });
-            showMessage(`${enabled ? "Enabled" : "Disabled"} ${id}`, false);
+            showSensorsMessage(`${enabled ? "Enabled" : "Disabled"} ${id}`, false);
             await refresh();
           } catch (err) {
-            showMessage(String(err), true);
+            showSensorsMessage(String(err), true);
           }
         });
       });
@@ -847,16 +1256,16 @@
         button.addEventListener("click", async () => {
           const id = button.getAttribute("data-id");
           if (!id) {
-            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            showSensorsMessage(SENSOR_ID_MISSING_MSG, true);
             return;
           }
           if (!window.confirm(`Remove sensor '${id}'?`)) return;
           try {
             await apiRequest(`/api/sensors/${encodeURIComponent(id)}?restart=0`, "DELETE");
-            showMessage(`Removed ${id}`, false);
+            showSensorsMessage(`Removed ${id}`, false);
             await refresh();
           } catch (err) {
-            showMessage(String(err), true);
+            showSensorsMessage(String(err), true);
           }
         });
       });
@@ -883,6 +1292,7 @@
         const rootInp = document.getElementById("mjpg_streamer_root");
         const st = document.getElementById("mjpg_streamer_status");
         if (rootInp) rootInp.value = mj.mjpg_streamer_root_saved || "";
+        populateMjpgCameraForm(mj);
         if (st) {
           const dir = mj.resolved_install_dir || "";
           if (mj.mjpg_streamer_found) {
@@ -898,6 +1308,7 @@
         const st = document.getElementById("mjpg_streamer_status");
         if (st) st.textContent = "";
       }
+      await refreshMjpgDeviceList();
       renderWebcamStreamsEditor();
 
       const retention = await apiRequest("/api/settings/retention");
@@ -950,11 +1361,11 @@
       });
 
       document.getElementById("scan_btn").addEventListener("click", async () => {
-        showMessage("Scanning BLE devices...", false);
+        showOnboardMessage("Scanning BLE devices...", false);
         const data = await apiRequest("/api/scan", "POST", { timeout: 20 });
         lastScanDevices = data.devices || [];
         renderScanOptions();
-        showMessage(`Found ${lastScanDevices.length} devices.`, false);
+        showOnboardMessage(`Found ${lastScanDevices.length} devices.`, false);
       });
       document.getElementById("show_all_devices").addEventListener("change", renderScanOptions);
       document.getElementById("scan_select").addEventListener("change", () => {
@@ -981,23 +1392,23 @@
           restart: false,
         };
         if (!payload.id) {
-          showMessage("Sensor ID is required (e.g. plant_1).", true);
+          showOnboardMessage("Sensor ID is required (e.g. plant_1).", true);
           return;
         }
         if (!payload.name) {
-          showMessage("Sensor name is required.", true);
+          showOnboardMessage("Sensor name is required.", true);
           return;
         }
         if (!payload.mac) {
-          showMessage("Sensor MAC is required.", true);
+          showOnboardMessage("Sensor MAC is required.", true);
           return;
         }
         try {
           await apiRequest("/api/sensors", "POST", payload);
-          showMessage(`Added sensor ${payload.id}`, false);
+          showOnboardMessage(`Added sensor ${payload.id}`, false);
           await refresh();
         } catch (err) {
-          showMessage(String(err), true);
+          showOnboardMessage(String(err), true);
         }
       });
 
@@ -1057,15 +1468,18 @@
         msg.textContent = "";
         try {
           const mjpg_streamer_root = document.getElementById("mjpg_streamer_root").value.trim();
-          const data = await apiRequest("/api/settings/mjpg-streamer", "POST", { mjpg_streamer_root });
+          const camera = collectMjpgCameraPayload();
+          const data = await apiRequest("/api/settings/mjpg-streamer", "POST", { mjpg_streamer_root, camera });
           syncMjpegAutofillFromApi(data);
+          populateMjpgCameraForm(data);
+          appendMjpgWarnings(msg, data.warnings);
           const st = document.getElementById("mjpg_streamer_status");
           const dir = data.resolved_install_dir || "";
           if (data.mjpg_streamer_found) {
             st.style.color = "#116329";
             st.textContent = `Saved. Found mjpg_streamer under ${dir}.`;
             msg.style.color = "#116329";
-            msg.textContent = "MJPEG install path saved.";
+            msg.textContent = "MJPEG path and camera settings saved. Stop the stream and Start again if it is already running.";
           } else {
             st.style.color = "#b42318";
             st.textContent = `Saved path, but no mjpg_streamer at ${dir}. Check the directory.`;
@@ -1077,6 +1491,17 @@
           msg.textContent = String(err);
         }
       });
+
+      const mjpgResPreset = document.getElementById("mjpg_resolution_preset");
+      if (mjpgResPreset) {
+        mjpgResPreset.addEventListener("change", syncMjpgResolutionCustomVisibility);
+      }
+      const mjpgDev = document.getElementById("mjpg_device");
+      if (mjpgDev) {
+        mjpgDev.addEventListener("change", () => { void refreshMjpgControlRanges(mjpgDev.value); });
+        mjpgDev.addEventListener("blur", () => { void refreshMjpgControlRanges(mjpgDev.value); });
+      }
+      bindMjpgLiveTuningInputs();
 
       document.getElementById("save_webcams_btn").addEventListener("click", async () => {
         const msg = document.getElementById("webcam_message");
@@ -1125,11 +1550,16 @@
         }
       });
 
+      document.querySelectorAll(".options-tab").forEach((btn) => {
+        btn.addEventListener("click", () => showOptionsTab(btn.getAttribute("data-options-tab")));
+      });
+
       await refresh();
 
       // Deep-link support from Dashboard: Options.html#sensor-<id>
       const hash = (window.location.hash || "").trim();
       if (hash && hash.startsWith("#sensor-")) {
+        showOptionsTab("sensors");
         const el = document.getElementById(hash.slice(1));
         if (el) {
           el.classList.add("highlight");

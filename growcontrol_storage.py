@@ -186,6 +186,17 @@ class GrowcontrolStorage:
             conn.execute("DELETE FROM weather_readings")
             conn.commit()
 
+    def rename_sensor_history(self, old_id: str, new_id: str) -> int:
+        if not old_id or old_id == new_id:
+            return 0
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE sensor_readings SET sensor_id = ? WHERE sensor_id = ?",
+                (new_id, old_id),
+            )
+            conn.commit()
+            return int(cur.rowcount)
+
     def get_sensor_history(
         self,
         sensor_id: str,
