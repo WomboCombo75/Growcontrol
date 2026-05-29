@@ -35,6 +35,9 @@
     .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
     .callout { border:1px solid #d0d7de; border-radius:8px; padding:10px 12px; background:#f6f8fa; }
     .callout.err { background:#ffebe9; border-color:#ffd1cc; }
+    .callout.ok { background:#e6ffed; border-color:#7ee787; color:#116329; }
+    .callout.pending { background:#f6f8fa; border-color:#d0d7de; color:#57606a; }
+    .sensor-refresh-status { margin-top: 10px; font-size: 13px; font-style: normal; line-height: 1.45; display: none; }
     .highlight { outline: 3px solid #0969da; outline-offset: 2px; }
     .wc-tip-line { margin: 8px 0 0; font-size: 13px; color: #424a53; line-height: 1.45; font-style: normal; }
     .wc-stream-box {
@@ -107,6 +110,10 @@
 
     <div class="card">
       <h2>Sensors</h2>
+      <p class="empty" style="margin:0 0 12px 0;font-style:normal;">
+        <strong>Refresh now</strong> connects to the sensor over Bluetooth, reads current values (moisture, temperature, light, conductivity, battery),
+        then updates <code>status.json</code> and the history database. This is an immediate one-off read — not the scheduled collector poll.
+      </p>
       <div id="sensors" class="grid"></div>
       <p id="empty_message" class="empty">No sensors configured yet.</p>
     </div>
@@ -265,6 +272,35 @@
     let lastSensorsForWebcam = [];
     /** From GET /api/settings/mjpg-streamer — used to auto-fill Stream URL after Start. */
     let mjpegAutofillFromApi = { default_stream_url_path: "/?action=stream", default_http_port: 8080 };
+    const lastRefreshFeedback = {};
+
+    function formatProbeSummary(probe) {
+      if (!probe || typeof probe !== "object") return "no readings returned";
+      const parts = [];
+      if (probe.moisture != null) parts.push(`moisture ${probe.moisture}%`);
+      if (probe.temperature != null) parts.push(`temp ${probe.temperature}°C`);
+      if (probe.light != null) parts.push(`light ${probe.light}`);
+      if (probe.conductivity != null) parts.push(`EC ${probe.conductivity}`);
+      if (probe.battery != null) parts.push(`battery ${probe.battery}%`);
+      if (probe.device_name) parts.push(`device “${probe.device_name}”`);
+      return parts.length ? parts.join(", ") : "connected but no metric fields returned";
+    }
+
+    function showSensorRefreshStatus(sensorId, message, tone) {
+      lastRefreshFeedback[sensorId] = { message, tone, at: Date.now() };
+      applySensorRefreshStatus(sensorId);
+    }
+
+    function applySensorRefreshStatus(sensorId) {
+      const fb = lastRefreshFeedback[sensorId];
+      const card = document.getElementById(`sensor-${sensorId}`);
+      if (!card || !fb) return;
+      const el = card.querySelector(".sensor-refresh-status");
+      if (!el) return;
+      el.className = `sensor-refresh-status callout ${fb.tone === "err" ? "err" : fb.tone === "ok" ? "ok" : "pending"}`;
+      el.textContent = fb.message;
+      el.style.display = "block";
+    }
 
     function syncMjpegAutofillFromApi(mj) {
       if (!mj || typeof mj !== "object") return;
@@ -726,25 +762,41 @@
             </button>
             <button class="btn danger" data-write="1" data-action="remove" data-id="${s.id}">Remove</button>
           </div>
+          <div class="sensor-refresh-status callout pending" aria-live="polite"></div>
         `;
         holder.appendChild(card);
+        applySensorRefreshStatus(s.id);
       });
 
       holder.querySelectorAll("button[data-action='refresh']").forEach((button) => {
         button.addEventListener("click", async () => {
           const id = button.getAttribute("data-id");
-          if (!id) return;
+          if (!id) {
+            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            return;
+          }
           button.disabled = true;
-          showMessage(`Refreshing ${id}...`, false);
+          button.textContent = "Refreshing…";
+          showSensorRefreshStatus(
+            id,
+            "Step 1/2: Connecting via Bluetooth and reading the sensor (this can take up to 25 seconds)…",
+            "pending",
+          );
           try {
-            await apiRequest(`/api/sensors/${encodeURIComponent(id)}/refresh`, "POST", { timeout: 25 });
-            showMessage(`Refreshed ${id}`, false);
+            const data = await apiRequest(`/api/sensors/${encodeURIComponent(id)}/refresh`, "POST", { timeout: 25 });
+            const probe = data.probe || {};
+            showSensorRefreshStatus(
+              id,
+              `Step 2/2: Done — ${formatProbeSummary(probe)}. Updated status.json and history database.`,
+              "ok",
+            );
             await refresh();
           } catch (err) {
-            showMessage(String(err), true);
+            showSensorRefreshStatus(id, `Refresh failed: ${String(err)}`, "err");
             await refresh();
           } finally {
             button.disabled = false;
+            button.textContent = "Refresh now";
           }
         });
       });
@@ -753,10 +805,23 @@
         button.addEventListener("click", async () => {
           const id = button.getAttribute("data-id");
           const currentName = button.getAttribute("data-current-name") || "";
+          if (!id) {
+            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            return;
+          }
           const name = window.prompt("New sensor name:", currentName);
-          if (!id || !name || !name.trim()) return;
-          await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { name: name.trim(), restart: false });
-          await refresh();
+          if (name === null) return;
+          if (!name.trim()) {
+            showMessage("Sensor name cannot be empty.", true);
+            return;
+          }
+          try {
+            await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { name: name.trim(), restart: false });
+            showMessage(`Renamed ${id}`, false);
+            await refresh();
+          } catch (err) {
+            showMessage(String(err), true);
+          }
         });
       });
 
@@ -764,19 +829,35 @@
         button.addEventListener("click", async () => {
           const id = button.getAttribute("data-id");
           const enabled = button.getAttribute("data-enabled") !== "true";
-          if (!id) return;
-          await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { enabled, restart: false });
-          await refresh();
+          if (!id) {
+            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            return;
+          }
+          try {
+            await apiRequest(`/api/sensors/${encodeURIComponent(id)}`, "PATCH", { enabled, restart: false });
+            showMessage(`${enabled ? "Enabled" : "Disabled"} ${id}`, false);
+            await refresh();
+          } catch (err) {
+            showMessage(String(err), true);
+          }
         });
       });
 
       holder.querySelectorAll("button[data-action='remove']").forEach((button) => {
         button.addEventListener("click", async () => {
           const id = button.getAttribute("data-id");
-          if (!id) return;
+          if (!id) {
+            showMessage("Sensor has no id; refresh the page to repair legacy entries.", true);
+            return;
+          }
           if (!window.confirm(`Remove sensor '${id}'?`)) return;
-          await apiRequest(`/api/sensors/${encodeURIComponent(id)}?restart=0`, "DELETE");
-          await refresh();
+          try {
+            await apiRequest(`/api/sensors/${encodeURIComponent(id)}?restart=0`, "DELETE");
+            showMessage(`Removed ${id}`, false);
+            await refresh();
+          } catch (err) {
+            showMessage(String(err), true);
+          }
         });
       });
     }
@@ -899,9 +980,25 @@
           mac: document.getElementById("sensor_mac").value.trim(),
           restart: false,
         };
-        await apiRequest("/api/sensors", "POST", payload);
-        showMessage(`Added sensor ${payload.id}`, false);
-        await refresh();
+        if (!payload.id) {
+          showMessage("Sensor ID is required (e.g. plant_1).", true);
+          return;
+        }
+        if (!payload.name) {
+          showMessage("Sensor name is required.", true);
+          return;
+        }
+        if (!payload.mac) {
+          showMessage("Sensor MAC is required.", true);
+          return;
+        }
+        try {
+          await apiRequest("/api/sensors", "POST", payload);
+          showMessage(`Added sensor ${payload.id}`, false);
+          await refresh();
+        } catch (err) {
+          showMessage(String(err), true);
+        }
       });
 
       document.getElementById("save_retention_btn").addEventListener("click", async () => {

@@ -1,7 +1,7 @@
 [Unit]
 Description=Growcontrol unified sensor collector
-After=network.target bluetooth.target
-Wants=network-online.target
+After=network.target bluetooth.service growcontrol-bluetooth.service
+Wants=network-online.target growcontrol-bluetooth.service
 
 [Service]
 Type=simple

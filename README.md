@@ -50,7 +50,7 @@ curl -sSL https://raw.githubusercontent.com/WomboCombo75/Growcontrol/main/instal
 
 When it finishes, open:
 
-**`http://<your-pi-ip>/growcontrol/Dashboard.html`**
+**`http://<your-pi-ip>/growcontrol/`**
 
 Tip: run `hostname -I` on the Pi to see its LAN IP.
 
@@ -113,11 +113,14 @@ If you already run Home Assistant, Growcontrol can still be useful as a dedicate
 ## Troubleshooting (quick)
 
 ```bash
-sudo systemctl status nginx growcontrol-collector.service growcontrol-webapi.service
+sudo systemctl status growcontrol-bluetooth.service nginx growcontrol-collector.service growcontrol-webapi.service
 journalctl -u growcontrol-collector.service -f
 journalctl -u growcontrol-webapi.service -f
 sudo nginx -t
+rfkill list bluetooth
 ```
+
+If BLE scan finds no devices, check that Bluetooth is not soft-blocked (`rfkill list`). The installer enables `growcontrol-bluetooth.service` to unblock and power on the adapter at boot on headless Raspberry Pi setups.
 
 ## Suggested GitHub topics
 

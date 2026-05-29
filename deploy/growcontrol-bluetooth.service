@@ -1,0 +1,15 @@
+[Unit]
+Description=Growcontrol Bluetooth adapter enablement
+Documentation=man:bluetoothd(8)
+After=bluetooth.service
+Requires=bluetooth.service
+Before=bluetooth.target growcontrol-collector.service growcontrol-webapi.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/rfkill unblock bluetooth
+ExecStart=/usr/bin/bluetoothctl power on
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

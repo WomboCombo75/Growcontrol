@@ -4,3 +4,4 @@ bluepy
 pygatt
 btlewrap
 pexpect
+setuptools

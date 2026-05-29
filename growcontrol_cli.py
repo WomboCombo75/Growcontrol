@@ -20,11 +20,43 @@ XIAOMI_SERVICE_HINTS = ("0000fe95", "fe95")
 LIKELY_FLORA_PREFIXES = ("5C:85:7E",)
 
 
+def repair_sensors(data: Dict[str, List[Dict[str, object]]]) -> Tuple[Dict[str, List[Dict[str, object]]], bool]:
+    """Assign missing ids/names so sensor actions remain addressable."""
+    sensors = data.setdefault("sensors", [])
+    used_ids = {str(sensor.get("id", "")).strip() for sensor in sensors if str(sensor.get("id", "")).strip()}
+    changed = False
+
+    for index, sensor in enumerate(sensors):
+        sensor_id = str(sensor.get("id", "")).strip()
+        if not sensor_id:
+            mac = str(sensor.get("mac", "")).replace(":", "").upper()
+            base = f"sensor_{mac[-6:]}" if len(mac) >= 6 else f"sensor_{index + 1}"
+            candidate = base
+            suffix = 2
+            while candidate in used_ids:
+                candidate = f"{base}_{suffix}"
+                suffix += 1
+            sensor["id"] = candidate
+            used_ids.add(candidate)
+            changed = True
+            sensor_id = candidate
+
+        if not str(sensor.get("name", "")).strip():
+            sensor["name"] = sensor_id
+            changed = True
+
+    return data, changed
+
+
 def load_sensors(path: Path) -> Dict[str, List[Dict[str, object]]]:
     if not path.exists():
         return {"sensors": []}
     with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+        data = json.load(handle)
+    data, changed = repair_sensors(data)
+    if changed:
+        save_sensors(path, data)
+    return data
 
 
 def load_settings(path: Path) -> Dict[str, object]:
@@ -202,6 +234,13 @@ def add_sensor(
     output_file: str | None,
     enabled: bool,
 ) -> None:
+    sensor_id = sensor_id.strip()
+    name = name.strip()
+    if not sensor_id:
+        raise ValueError("Sensor id is required")
+    if not name:
+        raise ValueError("Sensor name is required")
+
     data = load_sensors(sensors_path)
     sensors = data.setdefault("sensors", [])
 
@@ -427,6 +466,23 @@ def service_is_active(service_name: str) -> Tuple[bool, str]:
     return result.returncode == 0 and out == "active", out or "unknown"
 
 
+def bluetooth_adapter_ready() -> Tuple[bool, str]:
+    if not command_exists("rfkill"):
+        return True, "rfkill not available (skipped)"
+    result = subprocess.run(["rfkill", "list", "bluetooth"], capture_output=True, text=True, check=False)
+    output = result.stdout.strip()
+    if not output:
+        return True, "no Bluetooth rfkill entry (skipped)"
+    if "Soft blocked: yes" in output:
+        return False, "adapter soft-blocked; run: sudo systemctl restart growcontrol-bluetooth.service"
+    if command_exists("bluetoothctl"):
+        ctl = subprocess.run(["bluetoothctl", "show"], capture_output=True, text=True, check=False)
+        ctl_out = ctl.stdout
+        if "Powered: no" in ctl_out or "off-blocked" in ctl_out:
+            return False, "adapter powered off; run: sudo systemctl restart growcontrol-bluetooth.service"
+    return True, "unblocked and powered on"
+
+
 def cmd_doctor(args: argparse.Namespace) -> int:
     ok_all = True
     sensors_path = Path(args.sensors_file)
@@ -435,6 +491,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ok_all &= run_check("Python", True, sys.executable)
     ok_all &= run_check("hcitool", command_exists("hcitool"), "required for BLE scan")
     ok_all &= run_check("timeout", command_exists("timeout"), "required for BLE scan time limit")
+    bt_ok, bt_detail = bluetooth_adapter_ready()
+    ok_all &= run_check("bluetooth adapter", bt_ok, bt_detail)
+    if not bt_ok and args.strict:
+        ok_all = False
     ok_all &= run_check("systemctl", command_exists("systemctl"), "required for service management")
     ok_all &= run_check("nginx", command_exists("nginx"), "required for web dashboard")
 
@@ -495,6 +555,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     webapi_ok, webapi_state = service_is_active(args.webapi_service_name)
     run_check("webapi service", webapi_ok, f"{args.webapi_service_name} is {webapi_state}")
     if not webapi_ok and args.strict:
+        ok_all = False
+
+    bt_service_ok, bt_service_state = service_is_active("growcontrol-bluetooth.service")
+    run_check("bluetooth boot service", bt_service_ok, f"growcontrol-bluetooth.service is {bt_service_state}")
+    if not bt_service_ok and args.strict:
         ok_all = False
 
     nginx_ok, nginx_state = service_is_active(args.nginx_service_name)

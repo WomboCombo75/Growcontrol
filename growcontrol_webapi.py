@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from btlewrap.bluepy import BluepyBackend
 from miflora.miflora_poller import (
@@ -148,6 +148,16 @@ def normalize_api_path(handler: BaseHTTPRequestHandler) -> str:
     if len(raw) > 1 and raw.endswith("/"):
         return raw[:-1]
     return raw
+
+
+def parse_sensor_id_from_path(path: str) -> str:
+    """Decode sensor id from /api/sensors/{id} paths (handles %-encoded UTF-8)."""
+    if not path.startswith("/api/sensors/"):
+        return ""
+    raw = path.split("/api/sensors/", 1)[1]
+    if raw.endswith("/refresh"):
+        raw = raw.rsplit("/refresh", 1)[0]
+    return unquote(raw, encoding="utf-8", errors="strict").strip()
 
 
 def restart_collector() -> None:
@@ -1005,6 +1015,13 @@ class Handler(BaseHTTPRequestHandler):
                 json_response(self, 400, {"error": str(exc)})
                 return
 
+            if not sensor_id:
+                json_response(self, 400, {"error": "sensor id is required"})
+                return
+            if not name:
+                json_response(self, 400, {"error": "sensor name is required"})
+                return
+
             try:
                 add_sensor(
                     sensors_path=SENSORS_FILE,
@@ -1026,7 +1043,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path.startswith("/api/sensors/") and path.endswith("/refresh"):
-            sensor_id = path.split("/api/sensors/", 1)[1].rsplit("/refresh", 1)[0]
+            sensor_id = parse_sensor_id_from_path(path)
             if not sensor_id:
                 json_response(self, 400, {"error": "missing sensor id"})
                 return
@@ -1195,7 +1212,7 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, 404, {"error": "not found"})
             return
 
-        sensor_id = parsed.path.split("/api/sensors/", 1)[1]
+        sensor_id = parse_sensor_id_from_path(parsed.path)
         if not sensor_id:
             json_response(self, 400, {"error": "missing sensor id"})
             return
@@ -1231,7 +1248,7 @@ class Handler(BaseHTTPRequestHandler):
             json_response(self, 404, {"error": "not found"})
             return
 
-        sensor_id = parsed.path.split("/api/sensors/", 1)[1]
+        sensor_id = parse_sensor_id_from_path(parsed.path)
         if not sensor_id:
             json_response(self, 400, {"error": "missing sensor id"})
             return
