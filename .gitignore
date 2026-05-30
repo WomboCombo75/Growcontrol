@@ -20,3 +20,6 @@ legacy/mjpg-streamer/
 web/status.json
 web/weatherdata
 web/Sensor_*
+
+# Local developer tooling
+scripts/qa_smoke_test.sh
