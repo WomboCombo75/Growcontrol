@@ -365,6 +365,15 @@
     let webcamStreamsCache = [];
     let analyticsSensorsSource = ""; // "api" | "status" | ""
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
     function setAnalyticsDebug(text) {
       const el = document.getElementById("analytics_debug");
       if (!el) return;
@@ -844,6 +853,25 @@
       return ids.includes(sid);
     }
 
+    /** HTML viewer pages use iframe; raw MJPEG uses <img>. External streams follow validated content_kind. */
+    function streamUsesIframe(st) {
+      const url = String(st && st.stream_url || "").trim();
+      if (!url) return false;
+      if (st && String(st.source || "").toLowerCase() === "external") {
+        const kind = String(st.content_kind || "").toLowerCase();
+        if (kind === "html") return true;
+        if (kind === "mjpeg" || kind === "image" || kind === "stream") return false;
+      }
+      return streamUrlLooksLikeHtmlViewer(url);
+    }
+
+    function iframeSandboxForStream(st) {
+      if (st && String(st.source || "").toLowerCase() === "external") {
+        return "allow-same-origin allow-scripts";
+      }
+      return "allow-scripts allow-same-origin";
+    }
+
     /** HTML viewer pages (*.htm / *.html) use iframe; raw MJPEG uses <img>. */
     function streamUrlLooksLikeHtmlViewer(rawUrl) {
       const u = String(rawUrl || "").trim();
@@ -938,11 +966,13 @@
       const all = Array.isArray(webcamStreamsCache) ? webcamStreamsCache : [];
       const mapped = all.filter((st) => streamMatchesSensor(st, sensorId));
       const streams = mapped.filter((st) => String(st.stream_url || "").trim());
-      if (mapped.length && !streams.length) {
+        if (mapped.length && !streams.length) {
         const hint = document.createElement("p");
         hint.className = "webcam-hint";
-        hint.innerHTML =
-          "A webcam stream is mapped to this sensor but <strong>Stream URL</strong> is empty. Open <a href=\"Options.html\">Options</a> → Webcam, click <strong>Start MJPEG server</strong> (the URL is saved automatically), then reload this page.";
+        const needsUrl = mapped.some((st) => String(st.source || "").toLowerCase() !== "external");
+        hint.innerHTML = needsUrl
+          ? "A webcam stream is mapped to this sensor but <strong>Stream URL</strong> is empty. Open <a href=\"Options.html#webcam\">Options</a> → Webcam, click <strong>Start MJPEG server</strong> (built-in) or add an external URL, then reload."
+          : "External stream URL is missing. Open <a href=\"Options.html#webcam\">Options</a> → Webcam and add a validated external URL.";
         holder.appendChild(hint);
         return;
       }
@@ -969,17 +999,14 @@
         header.appendChild(pill);
         const body = document.createElement("div");
         body.className = "webcam-frame-body";
-        if (streamUrlLooksLikeHtmlViewer(streamUrl)) {
+        if (streamUsesIframe(st)) {
           const frame = document.createElement("iframe");
           frame.className = "webcam-embed-frame";
           frame.src = streamUrl;
           frame.title = (st.label && String(st.label)) || "Webcam stream";
           frame.referrerPolicy = "no-referrer";
           frame.setAttribute("allowfullscreen", "");
-          frame.setAttribute(
-            "sandbox",
-            "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
-          );
+          frame.setAttribute("sandbox", iframeSandboxForStream(st));
           body.appendChild(frame);
         } else {
           const img = document.createElement("img");
@@ -1137,8 +1164,9 @@
     }
 
     function sensorCardHtml(sensorId, s, pollMinutes) {
-      const name = s.name || sensorId;
-      const status = (s.status || "unknown").toLowerCase();
+      const name = escapeHtml(s.name || sensorId);
+      const safeId = escapeHtml(sensorId);
+      const status = escapeHtml((s.status || "unknown").toLowerCase());
       const lastSuccess = s.last_success || null;
       const battery = (s.last_metrics && typeof s.last_metrics.battery === "number") ? s.last_metrics.battery : null;
       const staleAfterSeconds = Math.max(5 * 60, pollMinutes * 60) * 2 + 5 * 60;
@@ -1159,7 +1187,7 @@
             <div class="name">${name}</div>
             <span class="pill ${enabled ? statusPill : "neutral"}">${enabled ? `${status}${isStale && status !== "error" ? " (stale)" : ""}` : "disabled"}</span>
           </div>
-          <div class="empty" style="margin-top:6px;">${sensorId}</div>
+          <div class="empty" style="margin-top:6px;">${safeId}</div>
           <div class="row" style="margin-top:10px;">
             <span class="pill ${battPill}">battery: ${typeof battery === "number" ? `${battery}%` : "-"}</span>
             <span class="pill neutral">last success: ${lastSuccess ? formatAge(lastSuccess) : "-"}</span>
@@ -1351,7 +1379,7 @@
         const attentionEl2 = document.getElementById("overview_attention");
         if (attentionEl2 && attention.length) {
           attentionEl2.innerHTML = attention
-            .map((s) => `<a href="Options.html#sensor-${encodeURIComponent(s.id)}">${s.name}</a>${s.status === "error" ? " (error)" : " (stale)"}`)
+            .map((s) => `<a href="Options.html#sensor-${encodeURIComponent(s.id)}">${escapeHtml(s.name)}</a>${s.status === "error" ? " (error)" : " (stale)"}`)
             .join(", ");
         }
 

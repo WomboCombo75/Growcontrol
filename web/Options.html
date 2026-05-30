@@ -7,6 +7,91 @@
   <style>
     body { font-family: Arial, sans-serif; margin: 0; background: #f4f6f8; color: #1b1f24; }
     *, *::before, *::after { box-sizing: border-box; }
+    .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+    .app-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: #fff;
+      border-bottom: 1px solid #d0d7de;
+      position: sticky;
+      top: 0;
+      z-index: 30;
+    }
+    .app-topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .app-topbar a { text-decoration: none; border: 1px solid #d0d7de; padding: 8px 10px; border-radius: 8px; color: #1b1f24; background: #fff; white-space: nowrap; }
+    .burger-btn {
+      display: none;
+      border: 1px solid #d0d7de;
+      background: #fff;
+      border-radius: 8px;
+      padding: 8px 10px;
+      cursor: pointer;
+      line-height: 1;
+      font-size: 18px;
+    }
+    .app-body { display: flex; flex: 1; min-height: 0; }
+    .sidebar {
+      width: 240px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #d0d7de;
+      padding: 16px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .sidebar-label {
+      padding: 0 16px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #57606a;
+    }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      border: none;
+      background: transparent;
+      text-align: left;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      color: #424a53;
+      border-left: 3px solid transparent;
+    }
+    .nav-item:hover { background: #f6f8fa; color: #1b1f24; }
+    .nav-item.active {
+      background: #eef6ff;
+      color: #0969da;
+      border-left-color: #0969da;
+    }
+    .nav-item .nav-icon { width: 1.25em; text-align: center; opacity: 0.85; flex-shrink: 0; }
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(27, 31, 36, 0.35);
+      z-index: 40;
+    }
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      padding: clamp(12px, 2.2vw, 28px);
+      display: grid;
+      gap: 16px;
+      align-content: start;
+    }
+    .nav-section[hidden] { display: none !important; }
+    .section-header { margin: 0 0 4px; font-size: 1.5rem; }
+    .section-lead { margin: 0 0 16px; color: #57606a; font-size: 14px; line-height: 1.45; max-width: 720px; }
     .container {
       width: 100%;
       max-width: min(1400px, 100%);
@@ -82,7 +167,11 @@
       .wc-start-row .wc-start-hint { flex: 1 1 200px; min-width: 0; }
     }
     .wc-stream-box .btn.danger { justify-self: start; }
-    .options-tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid #d0d7de; }
+    .wc-source-hint { font-size: 13px; color: #57606a; margin: 0 0 8px; line-height: 1.45; }
+    .wc-validate-status { font-size: 13px; margin-top: 6px; min-height: 1.2em; }
+    .wc-validate-status.ok { color: #116329; }
+    .wc-validate-status.err { color: #b42318; }
+    .options-tabs { display: flex; gap: 4px; margin: 0 0 16px; border-bottom: 1px solid #d0d7de; flex-wrap: wrap; }
     .options-tab {
       border: none;
       background: transparent;
@@ -98,289 +187,421 @@
     .section-message { margin-top: 12px; font-style: normal; min-height: 1.25em; }
     .section-message.err { color: #b42318; }
     .section-message.ok { color: #116329; }
+    .placeholder-box {
+      border: 1px dashed #d0d7de;
+      border-radius: 8px;
+      padding: 32px 24px;
+      text-align: center;
+      color: #57606a;
+      background: #fafbfc;
+    }
+    .placeholder-box strong { display: block; margin-bottom: 8px; color: #424a53; font-size: 16px; }
+    .container-gate {
+      border: 1px dashed #d0d7de;
+      border-radius: 8px;
+      padding: 16px;
+      background: #fafbfc;
+    }
+    .container-gate h3 { margin: 0 0 8px; font-size: 16px; }
+    .container-gate p { margin: 0 0 10px; color: #57606a; font-size: 14px; }
+    .container-gate .empty { font-style: normal; }
+    @media (max-width: 860px) {
+      .burger-btn { display: inline-block; }
+      .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 50;
+        transform: translateX(-100%);
+        transition: transform 0.2s ease;
+        box-shadow: 4px 0 24px rgba(27, 31, 36, 0.12);
+      }
+      .sidebar.open { transform: translateX(0); }
+      .sidebar-backdrop.open { display: block; }
+    }
   </style>
 </head>
 <body>
-  <div class="container">
-    <div class="card topbar">
-      <div>
-        <strong>Growcontrol</strong> <span class="empty">Options</span>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;">
-        <a href="Dashboard.html">Dashboard</a>
-      </div>
-    </div>
-
-    <div id="auth_notice" class="callout" style="display:none;"></div>
-
-    <div class="card">
-      <h2>Dashboard display</h2>
-      <div class="controls">
-        <p class="empty" style="margin:0 0 8px 0;">
-          Chart labels, overview “Last update”, and watering ETA on the <a href="Dashboard.html">Dashboard</a> use this time zone.
-          Stored in this browser only (<code>localStorage</code>).
-        </p>
-        <label for="chart_timezone_select">Chart time zone</label>
-        <select id="chart_timezone_select">
-          <option value="">Browser default</option>
-          <option value="UTC">UTC</option>
-          <option value="Europe/Berlin">Europe/Berlin</option>
-          <option value="Europe/London">Europe/London</option>
-          <option value="Europe/Paris">Europe/Paris</option>
-          <option value="Europe/Madrid">Europe/Madrid</option>
-          <option value="Europe/Warsaw">Europe/Warsaw</option>
-          <option value="America/New_York">America/New_York</option>
-          <option value="America/Chicago">America/Chicago</option>
-          <option value="America/Los_Angeles">America/Los_Angeles</option>
-          <option value="Asia/Tokyo">Asia/Tokyo</option>
-          <option value="Australia/Sydney">Australia/Sydney</option>
-          <option value="__custom">Other (IANA)…</option>
-        </select>
-        <div class="row" id="chart_timezone_custom_row" style="display:none;">
-          <input id="chart_timezone_custom" placeholder="e.g. Europe/Amsterdam" style="flex:1;min-width:180px;" />
+  <div class="app-shell">
+    <header class="app-topbar">
+      <div class="app-topbar-left">
+        <button type="button" class="burger-btn" id="burger_btn" aria-label="Open menu" aria-expanded="false" aria-controls="sidebar">☰</button>
+        <div>
+          <strong>Growcontrol</strong> <span class="empty">Options</span>
         </div>
       </div>
-    </div>
+      <a href="Dashboard.html">Dashboard</a>
+    </header>
 
-    <div class="card">
-      <div class="options-tabs" role="tablist" aria-label="Sensor management">
-        <button type="button" class="options-tab active" data-options-tab="sensors" role="tab" aria-selected="true" aria-controls="options_panel_sensors">Sensors</button>
-        <button type="button" class="options-tab" data-options-tab="onboard" role="tab" aria-selected="false" aria-controls="options_panel_onboard">Onboard sensor</button>
-      </div>
+    <div id="auth_notice" class="callout" style="display:none;margin:12px 16px 0;"></div>
 
-      <div id="options_panel_sensors" class="options-panel" role="tabpanel">
-        <p class="empty" style="margin:0 0 12px 0;font-style:normal;">
-          <strong>Refresh now</strong> connects to the sensor over Bluetooth, reads current values (moisture, temperature, light, conductivity, battery),
-          then updates <code>status.json</code> and the history database. This is an immediate one-off read — not the scheduled collector poll.
-        </p>
-        <div id="sensors" class="grid"></div>
-        <p id="empty_message" class="empty">No sensors configured yet.</p>
-        <div id="sensors_message" class="section-message empty" aria-live="polite"></div>
-      </div>
+    <div class="app-body">
+      <div class="sidebar-backdrop" id="sidebar_backdrop" aria-hidden="true"></div>
+      <aside class="sidebar" id="sidebar" aria-label="Options sections">
+        <div class="sidebar-label">Containers</div>
+        <nav class="sidebar-nav" role="tablist" aria-label="Options navigation">
+          <button type="button" class="nav-item active" data-nav="sensors" role="tab" aria-selected="true" aria-controls="nav_section_sensors">
+            <span class="nav-icon" aria-hidden="true">🌱</span> Sensors
+          </button>
+          <button type="button" class="nav-item" data-nav="data" role="tab" aria-selected="false" aria-controls="nav_section_data">
+            <span class="nav-icon" aria-hidden="true">💾</span> Data
+          </button>
+          <button type="button" class="nav-item" data-nav="weather" role="tab" aria-selected="false" aria-controls="nav_section_weather">
+            <span class="nav-icon" aria-hidden="true">☁</span> Weather
+          </button>
+          <button type="button" class="nav-item" data-nav="webcam" role="tab" aria-selected="false" aria-controls="nav_section_webcam">
+            <span class="nav-icon" aria-hidden="true">📷</span> Webcam
+          </button>
+          <button type="button" class="nav-item" data-nav="notifications" role="tab" aria-selected="false" aria-controls="nav_section_notifications">
+            <span class="nav-icon" aria-hidden="true">🔔</span> Notifications
+          </button>
+        </nav>
+      </aside>
 
-      <div id="options_panel_onboard" class="options-panel" role="tabpanel" hidden>
-        <div class="controls">
-          <label for="api_key">API Key (optional)</label>
-          <input id="api_key" placeholder="leave empty unless configured" />
-          <button id="scan_btn" class="btn primary" type="button">Scan BLE Devices</button>
-          <label for="scan_select">Discovered devices</label>
-          <select id="scan_select"><option value="">-- no scan results --</option></select>
-          <label style="display:flex;align-items:center;gap:6px;">
-            <input type="checkbox" id="show_all_devices" />
-            Show all devices (not only likely Flora)
-          </label>
-          <label for="sensor_id">Sensor ID</label>
-          <input id="sensor_id" placeholder="plant_1" />
-          <label for="sensor_name">Sensor Name</label>
-          <input id="sensor_name" placeholder="My Plant" />
-          <label for="sensor_mac">Sensor MAC</label>
-          <input id="sensor_mac" placeholder="AA:BB:CC:DD:EE:FF" />
-          <button id="verify_btn" class="btn" type="button">Verify Sensor</button>
-          <div id="verify_result" class="empty"></div>
-          <button id="add_btn" class="btn primary" type="button">Add Sensor</button>
-          <div id="onboard_message" class="section-message empty" aria-live="polite"></div>
-        </div>
-      </div>
-    </div>
+      <main class="app-main">
+        <!-- Sensors container -->
+        <div id="nav_section_sensors" class="nav-section" role="tabpanel" aria-labelledby="nav_sensors">
+          <h1 class="section-header">Sensors</h1>
+          <p class="section-lead">Manage MiFlora sensors, onboard new devices, and tune collector polling for battery life and Bluetooth performance.</p>
 
-    <div class="card">
-      <h2>Data Storage</h2>
-      <div class="controls">
-        <label for="retention_select">Keep history for</label>
-        <select id="retention_select">
-          <option value="1w">1 week</option>
-          <option value="1m">1 month</option>
-          <option value="3m">3 months</option>
-          <option value="6m">6 months</option>
-          <option value="1y">1 year</option>
-        </select>
-        <button id="save_retention_btn" class="btn primary" type="button">Save retention</button>
-        <button id="clear_data_btn" class="btn danger" type="button">Delete all stored history</button>
-        <div id="storage_message" class="empty"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Weather (OpenWeather)</h2>
-      <div class="controls">
-        <div class="callout">
-          <div class="row" style="justify-content:space-between;">
-            <strong>Optional</strong>
-            <span class="pill neutral">OpenWeather</span>
-          </div>
-          <div class="empty" style="margin-top:6px;">
-            Configure location and API key here. The collector will start writing <code>weatherdata</code> when enabled.
-          </div>
-          <div class="empty" style="margin-top:6px;">
-            Poll interval: <strong>every 15 minutes</strong>.
-          </div>
-        </div>
-
-        <label style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" id="weather_enabled" />
-          Enable weather
-        </label>
-
-        <label for="weather_lat">Latitude</label>
-        <input id="weather_lat" type="number" step="0.000001" min="-90" max="90" />
-        <label for="weather_lon">Longitude</label>
-        <input id="weather_lon" type="number" step="0.000001" min="-180" max="180" />
-        <label for="weather_units">Units</label>
-        <select id="weather_units">
-          <option value="metric">metric (°C)</option>
-          <option value="imperial">imperial (°F)</option>
-          <option value="standard">standard (K)</option>
-        </select>
-
-        <label for="openweather_api_key">OpenWeather API key</label>
-        <input id="openweather_api_key" placeholder="paste key (stored in config/settings.json)" />
-
-        <button id="save_weather_btn" class="btn primary" data-write="1" type="button">Save weather settings</button>
-        <div id="weather_message" class="empty"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Webcam (MJPEG)</h2>
-      <div class="controls wc-webcam-card">
-        <div class="callout">
-          <div class="row" style="justify-content:space-between;">
-            <strong>Optional</strong>
-            <span class="pill neutral">mjpg-streamer</span>
-          </div>
-          <p class="wc-tip-line">You can leave <strong>Stream URL</strong> empty: <strong>Start MJPEG server</strong> fills it automatically (host from how you opened this page, port from the URL or <code>mjpg_streamer.default_http_port</code> in <code>config/settings.json</code>, path from <code>default_stream_url_path</code>). Override by typing a URL. Use your Pi’s LAN host when you use the Dashboard from another device.</p>
-          <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Click <strong>Save webcam streams</strong> after edits. Set the install path and camera options below, then <strong>Save MJPEG settings</strong>.</p>
-        </div>
-        <label for="mjpg_streamer_root">mjpg-streamer install directory</label>
-        <input id="mjpg_streamer_root" type="text" placeholder="/home/pi/new-mjpg-streamer" style="max-width:100%;" />
-        <div id="mjpg_streamer_status" class="empty" style="margin-top:6px;font-size:13px;"></div>
-        <button id="save_mjpg_streamer_btn" type="button" class="btn" data-write="1">Save MJPEG settings</button>
-        <div class="wc-camera-panel">
-          <h3>Camera capture</h3>
-          <p class="wc-tip-line">Resolution and FPS need <strong>Stop → Start</strong>. Exposure, gain, and image tuning below apply <strong>live</strong> while the stream runs (about half a second after you change a value).</p>
-          <p class="wc-tip-line"><strong>JPEG quality</strong> mainly affects software re-encoding; many USB cameras output MJPEG directly — exposure and gain matter most in low light.</p>
-          <div class="wc-camera-grid">
-            <div class="wc-field wc-field-span2">
-              <label for="mjpg_device">Video device</label>
-              <input id="mjpg_device" type="text" list="mjpg_device_list" placeholder="/dev/video0" />
-              <datalist id="mjpg_device_list"></datalist>
+          <div class="card">
+            <div class="options-tabs" role="tablist" aria-label="Sensor views">
+              <button type="button" class="options-tab active" data-sensor-tab="overview" role="tab" aria-selected="true" aria-controls="options_panel_overview">Overview</button>
+              <button type="button" class="options-tab" data-sensor-tab="onboard" role="tab" aria-selected="false" aria-controls="options_panel_onboard">Onboard sensor</button>
             </div>
-            <div class="wc-field">
-              <label for="mjpg_resolution_preset">Resolution</label>
-              <select id="mjpg_resolution_preset">
-                <option value="640x480">640×480 (VGA)</option>
-                <option value="1280x720">1280×720 (720p)</option>
-                <option value="1920x1080">1920×1080 (1080p)</option>
-                <option value="3840x2160">3840×2160 (4K)</option>
-                <option value="custom">Custom…</option>
+
+            <div id="options_panel_overview" class="options-panel" role="tabpanel">
+              <p class="empty" style="margin:0 0 12px 0;font-style:normal;">
+                <strong>Refresh now</strong> connects to the sensor over Bluetooth, reads current values (moisture, temperature, light, conductivity, battery),
+                then updates <code>status.json</code> and the history database. This is an immediate one-off read — not the scheduled collector poll.
+              </p>
+              <div id="sensors" class="grid"></div>
+              <p id="empty_message" class="empty">No sensors configured yet.</p>
+              <div id="sensors_message" class="section-message empty" aria-live="polite"></div>
+            </div>
+
+            <div id="options_panel_onboard" class="options-panel" role="tabpanel" hidden>
+              <div class="controls">
+                <label for="api_key">API Key (optional)</label>
+                <input id="api_key" placeholder="leave empty unless configured" />
+                <button id="scan_btn" class="btn primary" type="button">Scan BLE Devices</button>
+                <label for="scan_select">Discovered devices</label>
+                <select id="scan_select"><option value="">-- no scan results --</option></select>
+                <label style="display:flex;align-items:center;gap:6px;">
+                  <input type="checkbox" id="show_all_devices" />
+                  Show all devices (not only likely Flora)
+                </label>
+                <label for="sensor_id">Sensor ID</label>
+                <input id="sensor_id" placeholder="plant_1" />
+                <label for="sensor_name">Sensor Name</label>
+                <input id="sensor_name" placeholder="My Plant" />
+                <label for="sensor_mac">Sensor MAC</label>
+                <input id="sensor_mac" placeholder="AA:BB:CC:DD:EE:FF" />
+                <button id="verify_btn" class="btn" type="button">Verify Sensor</button>
+                <div id="verify_result" class="empty"></div>
+                <button id="add_btn" class="btn primary" type="button">Add Sensor</button>
+                <div id="onboard_message" class="section-message empty" aria-live="polite"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Collector polling</h2>
+            <div class="controls">
+              <div class="callout">
+                <div class="row" style="justify-content:space-between;">
+                  <strong>Battery-friendly setting</strong>
+                  <span class="pill neutral">default: 60 min</span>
+                </div>
+                <div class="empty" style="margin-top:6px;">
+                  BLE polling is battery intensive. Increase the interval to preserve battery life.
+                </div>
+              </div>
+              <label for="sensor_poll_minutes">Sensor poll interval (minutes)</label>
+              <input id="sensor_poll_minutes" type="number" min="5" max="1440" value="60" />
+              <button id="save_polling_btn" class="btn primary" data-write="1" type="button">Save polling settings</button>
+              <div id="polling_message" class="empty"></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>Bluetooth performance</h2>
+            <div class="controls">
+              <div class="callout">
+                <div class="row" style="justify-content:space-between;">
+                  <strong>Parallel sensor polling</strong>
+                  <span class="pill neutral">default: 2</span>
+                </div>
+                <div class="empty" style="margin-top:6px;">
+                  Higher values can reduce total poll time when you have many sensors, but may stress Bluetooth.
+                </div>
+              </div>
+              <label for="sensor_parallelism">Max parallel sensor polls (1..6)</label>
+              <input id="sensor_parallelism" type="number" min="1" max="6" value="2" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Data container -->
+        <div id="nav_section_data" class="nav-section" role="tabpanel" hidden>
+          <h1 class="section-header">Data</h1>
+          <p class="section-lead">Retention policy for sensor history and dashboard display preferences stored in this browser.</p>
+
+          <div class="card">
+            <h2>Data storage</h2>
+            <div class="controls">
+              <label for="retention_select">Keep history for</label>
+              <select id="retention_select">
+                <option value="1w">1 week</option>
+                <option value="1m">1 month</option>
+                <option value="3m">3 months</option>
+                <option value="6m">6 months</option>
+                <option value="1y">1 year</option>
               </select>
+              <button id="save_retention_btn" class="btn primary" type="button">Save retention</button>
+              <button id="clear_data_btn" class="btn danger" type="button">Delete all stored history</button>
+              <div id="storage_message" class="empty"></div>
             </div>
-            <div class="wc-field" id="mjpg_resolution_custom_row" style="display:none;">
-              <label for="mjpg_resolution_custom">Custom resolution</label>
-              <input id="mjpg_resolution_custom" type="text" placeholder="1920x1080" />
-            </div>
-            <div class="wc-field">
-              <label for="mjpg_fps">FPS (frames per second)</label>
-              <input id="mjpg_fps" type="number" min="1" max="120" placeholder="15" />
-            </div>
-            <div class="wc-field">
-              <label for="mjpg_quality">JPEG quality (1–100)</label>
-              <input id="mjpg_quality" type="number" min="1" max="100" value="85" />
-            </div>
-            <div class="wc-field wc-field-span2">
-              <label>Exposure &amp; gain</label>
-              <div class="wc-exposure-grid">
-                <div class="wc-field">
-                  <label for="mjpg_auto_exposure">Exposure mode</label>
-                  <select id="mjpg_auto_exposure">
-                    <option value="manual">Manual</option>
-                    <option value="aperture-priority">Aperture priority</option>
-                    <option value="shutter-priority">Shutter priority</option>
-                    <option value="auto">Auto (if supported)</option>
-                  </select>
-                </div>
-                <div class="wc-field">
-                  <label for="mjpg_exposure_time">Exposure time</label>
-                  <input id="mjpg_exposure_time" type="number" placeholder="800" />
-                </div>
-                <div class="wc-field">
-                  <label for="mjpg_gain">Gain</label>
-                  <input id="mjpg_gain" type="number" placeholder="40" />
-                </div>
-              </div>
-            </div>
-            <div class="wc-field wc-field-span2">
-              <label>Image tuning <span class="empty" style="font-weight:normal;">(camera-specific ranges from <code>v4l2-ctl</code>)</span></label>
-              <div class="wc-tuning-grid">
-                <div class="wc-field">
-                  <label for="mjpg_brightness">Brightness</label>
-                  <input id="mjpg_brightness" type="number" placeholder="auto" />
-                </div>
-                <div class="wc-field">
-                  <label for="mjpg_contrast">Contrast</label>
-                  <input id="mjpg_contrast" type="number" placeholder="default" />
-                </div>
-                <div class="wc-field">
-                  <label for="mjpg_sharpness">Sharpness</label>
-                  <input id="mjpg_sharpness" type="number" placeholder="default" />
-                </div>
-                <div class="wc-field">
-                  <label for="mjpg_saturation">Saturation</label>
-                  <input id="mjpg_saturation" type="number" placeholder="default" />
-                </div>
+          </div>
+
+          <div class="card">
+            <h2>Dashboard display</h2>
+            <div class="controls">
+              <p class="empty" style="margin:0 0 8px 0;">
+                Chart labels, overview “Last update”, and watering ETA on the <a href="Dashboard.html">Dashboard</a> use this time zone.
+                Stored in this browser only (<code>localStorage</code>).
+              </p>
+              <label for="chart_timezone_select">Chart time zone</label>
+              <select id="chart_timezone_select">
+                <option value="">Browser default</option>
+                <option value="UTC">UTC</option>
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="Europe/London">Europe/London</option>
+                <option value="Europe/Paris">Europe/Paris</option>
+                <option value="Europe/Madrid">Europe/Madrid</option>
+                <option value="Europe/Warsaw">Europe/Warsaw</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="America/Chicago">America/Chicago</option>
+                <option value="America/Los_Angeles">America/Los_Angeles</option>
+                <option value="Asia/Tokyo">Asia/Tokyo</option>
+                <option value="Australia/Sydney">Australia/Sydney</option>
+                <option value="__custom">Other (IANA)…</option>
+              </select>
+              <div class="row" id="chart_timezone_custom_row" style="display:none;">
+                <input id="chart_timezone_custom" placeholder="e.g. Europe/Amsterdam" style="flex:1;min-width:180px;" />
               </div>
             </div>
           </div>
-          <div id="mjpg_live_status" class="empty" style="margin-top:8px;font-size:13px;" aria-live="polite"></div>
-          <div id="mjpg_camera_preview" class="empty" style="margin-top:8px;font-size:13px;color:#57606a;"></div>
         </div>
-        <p class="empty" style="margin:0 0 6px 0;">Streams show in <strong>Dashboard → Analytics</strong> for mapped sensors.</p>
-        <div id="webcam_streams_editor"></div>
-        <div class="row">
-          <button id="webcam_add_stream_btn" class="btn" type="button" data-write="1">Add stream</button>
-          <button id="save_webcams_btn" class="btn primary" type="button" data-write="1">Save webcam streams</button>
+
+        <!-- Weather container -->
+        <div id="nav_section_weather" class="nav-section" role="tabpanel" hidden>
+          <h1 class="section-header">Weather</h1>
+          <p class="section-lead">Optional OpenWeather integration for outdoor conditions on the Dashboard.</p>
+
+          <div class="card">
+            <h2>OpenWeather</h2>
+            <div class="controls">
+              <div class="callout">
+                <div class="row" style="justify-content:space-between;">
+                  <strong>Optional</strong>
+                  <span class="pill neutral">OpenWeather</span>
+                </div>
+                <div class="empty" style="margin-top:6px;">
+                  Configure location and API key here. The collector will start writing <code>weatherdata</code> when enabled.
+                </div>
+                <div class="empty" style="margin-top:6px;">
+                  Poll interval: <strong>every 15 minutes</strong>.
+                </div>
+              </div>
+
+              <label style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" id="weather_enabled" />
+                Enable weather
+              </label>
+
+              <label for="weather_lat">Latitude</label>
+              <input id="weather_lat" type="number" step="0.000001" min="-90" max="90" />
+              <label for="weather_lon">Longitude</label>
+              <input id="weather_lon" type="number" step="0.000001" min="-180" max="180" />
+              <label for="weather_units">Units</label>
+              <select id="weather_units">
+                <option value="metric">metric (°C)</option>
+                <option value="imperial">imperial (°F)</option>
+                <option value="standard">standard (K)</option>
+              </select>
+
+              <label for="openweather_api_key">OpenWeather API key</label>
+              <input id="openweather_api_key" type="password" autocomplete="off" placeholder="paste key (saved to .env on the Pi, not settings.json)" />
+
+              <button id="save_weather_btn" class="btn primary" data-write="1" type="button">Save weather settings</button>
+              <div id="weather_message" class="empty"></div>
+            </div>
+          </div>
         </div>
-        <div id="webcam_message" class="empty"></div>
-      </div>
+
+        <!-- Webcam container -->
+        <div id="nav_section_webcam" class="nav-section" role="tabpanel" hidden>
+          <h1 class="section-header">Webcam</h1>
+          <p class="section-lead">Built-in streaming via mjpg-streamer on this Pi, or attach an external http(s) webcam URL (validated for safety before save).</p>
+
+          <div id="webcam_container_gate" class="card container-gate" hidden>
+            <h3>Webcam container is not installed</h3>
+            <p>Install this container to enable webcam streams and camera controls.</p>
+            <div class="row">
+              <button id="install_webcam_container_btn" class="btn primary" data-write="1" type="button">Install Webcam container</button>
+            </div>
+            <div id="webcam_container_message" class="empty" style="margin-top:8px;"></div>
+          </div>
+
+          <div id="webcam_container_content">
+          <div class="card">
+            <h2>Stream sources</h2>
+            <div class="callout">
+              <p class="wc-tip-line"><strong>Built-in</strong> — uses mjpg-streamer on the Pi (Start/Stop below). Leave Stream URL empty to auto-fill after start.</p>
+              <p class="wc-tip-line"><strong>External</strong> — any LAN/internet MJPEG or HTML viewer URL.</p>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <button id="remove_webcam_container_btn" class="btn danger" data-write="1" type="button">Remove Webcam container</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>MJPEG streams</h2>
+            <div class="controls wc-webcam-card">
+              <div class="callout">
+                <div class="row" style="justify-content:space-between;">
+                  <strong>Optional</strong>
+                  <span class="pill neutral">mjpg-streamer</span>
+                </div>
+                <p class="wc-tip-line">You can leave <strong>Stream URL</strong> empty: <strong>Start MJPEG server</strong> fills it automatically. Override by typing a URL. Use your Pi’s LAN host when you use the Dashboard from another device.</p>
+                <p class="wc-tip-line">Assign sensors (Ctrl/Cmd-click); leave none selected → show on all plants. Click <strong>Save webcam streams</strong> after edits. Set the install path and camera options below, then <strong>Save MJPEG settings</strong>.</p>
+              </div>
+              <label for="mjpg_streamer_root">mjpg-streamer install directory</label>
+              <input id="mjpg_streamer_root" type="text" placeholder="/home/pi/new-mjpg-streamer" style="max-width:100%;" />
+              <div id="mjpg_streamer_status" class="empty" style="margin-top:6px;font-size:13px;"></div>
+              <button id="save_mjpg_streamer_btn" type="button" class="btn" data-write="1">Save MJPEG settings</button>
+        <div class="wc-camera-panel">
+          <h3>Built-in camera (mjpg-streamer only)</h3>
+                <p class="wc-tip-line">Resolution and FPS need <strong>Stop → Start</strong>. Exposure, gain, and image tuning below apply <strong>live</strong> while the stream runs (about half a second after you change a value).</p>
+                <p class="wc-tip-line"><strong>JPEG quality</strong> mainly affects software re-encoding; many USB cameras output MJPEG directly — exposure and gain matter most in low light.</p>
+                <div class="wc-camera-grid">
+                  <div class="wc-field wc-field-span2">
+                    <label for="mjpg_device">Video device</label>
+                    <input id="mjpg_device" type="text" list="mjpg_device_list" placeholder="/dev/video0" />
+                    <datalist id="mjpg_device_list"></datalist>
+                  </div>
+                  <div class="wc-field">
+                    <label for="mjpg_resolution_preset">Resolution</label>
+                    <select id="mjpg_resolution_preset">
+                      <option value="640x480">640×480 (VGA)</option>
+                      <option value="1280x720">1280×720 (720p)</option>
+                      <option value="1920x1080">1920×1080 (1080p)</option>
+                      <option value="3840x2160">3840×2160 (4K)</option>
+                      <option value="custom">Custom…</option>
+                    </select>
+                  </div>
+                  <div class="wc-field" id="mjpg_resolution_custom_row" style="display:none;">
+                    <label for="mjpg_resolution_custom">Custom resolution</label>
+                    <input id="mjpg_resolution_custom" type="text" placeholder="1920x1080" />
+                  </div>
+                  <div class="wc-field">
+                    <label for="mjpg_fps">FPS (frames per second)</label>
+                    <input id="mjpg_fps" type="number" min="1" max="120" placeholder="15" />
+                  </div>
+                  <div class="wc-field">
+                    <label for="mjpg_quality">JPEG quality (1–100)</label>
+                    <input id="mjpg_quality" type="number" min="1" max="100" value="85" />
+                  </div>
+                  <div class="wc-field wc-field-span2">
+                    <label>Exposure &amp; gain</label>
+                    <div class="wc-exposure-grid">
+                      <div class="wc-field">
+                        <label for="mjpg_auto_exposure">Exposure mode</label>
+                        <select id="mjpg_auto_exposure">
+                          <option value="manual">Manual</option>
+                          <option value="aperture-priority">Aperture priority</option>
+                          <option value="shutter-priority">Shutter priority</option>
+                          <option value="auto">Auto (if supported)</option>
+                        </select>
+                      </div>
+                      <div class="wc-field">
+                        <label for="mjpg_exposure_time">Exposure time</label>
+                        <input id="mjpg_exposure_time" type="number" placeholder="800" />
+                      </div>
+                      <div class="wc-field">
+                        <label for="mjpg_gain">Gain</label>
+                        <input id="mjpg_gain" type="number" placeholder="40" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="wc-field wc-field-span2">
+                    <label>Image tuning <span class="empty" style="font-weight:normal;">(camera-specific ranges from <code>v4l2-ctl</code>)</span></label>
+                    <div class="wc-tuning-grid">
+                      <div class="wc-field">
+                        <label for="mjpg_brightness">Brightness</label>
+                        <input id="mjpg_brightness" type="number" placeholder="auto" />
+                      </div>
+                      <div class="wc-field">
+                        <label for="mjpg_contrast">Contrast</label>
+                        <input id="mjpg_contrast" type="number" placeholder="default" />
+                      </div>
+                      <div class="wc-field">
+                        <label for="mjpg_sharpness">Sharpness</label>
+                        <input id="mjpg_sharpness" type="number" placeholder="default" />
+                      </div>
+                      <div class="wc-field">
+                        <label for="mjpg_saturation">Saturation</label>
+                        <input id="mjpg_saturation" type="number" placeholder="default" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div id="mjpg_live_status" class="empty" style="margin-top:8px;font-size:13px;" aria-live="polite"></div>
+                <div id="mjpg_camera_preview" class="empty" style="margin-top:8px;font-size:13px;color:#57606a;"></div>
+              </div>
+              <p class="empty" style="margin:0 0 6px 0;">Streams show in <strong>Dashboard → Analytics</strong> for mapped sensors.</p>
+              <div id="webcam_streams_editor"></div>
+              <div class="row">
+                <button id="webcam_add_stream_btn" class="btn" type="button" data-write="1">Add stream</button>
+                <button id="save_webcams_btn" class="btn primary" type="button" data-write="1">Save webcam streams</button>
+              </div>
+              <div id="webcam_message" class="empty"></div>
+            </div>
+          </div>
+          </div>
+        </div>
+
+        <!-- Notifications container (placeholder) -->
+        <div id="nav_section_notifications" class="nav-section" role="tabpanel" hidden>
+          <h1 class="section-header">Notifications</h1>
+          <p class="section-lead">Alerts and messaging — coming in a future release.</p>
+
+          <div id="notifications_container_gate" class="card container-gate" hidden>
+            <h3>Notifications container is not installed</h3>
+            <p>Install this container to unlock notification features when they are added.</p>
+            <div class="row">
+              <button id="install_notifications_container_btn" class="btn primary" data-write="1" type="button">Install Notifications container</button>
+            </div>
+            <div id="notifications_container_message" class="empty" style="margin-top:8px;"></div>
+          </div>
+
+          <div id="notifications_container_content">
+          <div class="card">
+            <div class="placeholder-box">
+              <strong>Notifications container</strong>
+              Push alerts, email, and webhook integrations will live here.
+              This section is reserved for a later implementation.
+            </div>
+            <div class="row" style="margin-top:12px;justify-content:center;">
+              <button id="remove_notifications_container_btn" class="btn danger" data-write="1" type="button">Remove Notifications container</button>
+            </div>
+          </div>
+          </div>
+        </div>
+      </main>
     </div>
-
-    <div class="card">
-      <h2>Collector polling</h2>
-      <div class="controls">
-        <div class="callout">
-          <div class="row" style="justify-content:space-between;">
-            <strong>Battery-friendly setting</strong>
-            <span class="pill neutral">default: 60 min</span>
-          </div>
-          <div class="empty" style="margin-top:6px;">
-            BLE polling is battery intensive. Increase the interval to preserve battery life.
-          </div>
-        </div>
-
-        <label for="sensor_poll_minutes">Sensor poll interval (minutes)</label>
-        <input id="sensor_poll_minutes" type="number" min="5" max="1440" value="60" />
-        <button id="save_polling_btn" class="btn primary" data-write="1" type="button">Save polling settings</button>
-        <div id="polling_message" class="empty"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>Bluetooth performance</h2>
-      <div class="controls">
-        <div class="callout">
-          <div class="row" style="justify-content:space-between;">
-            <strong>Parallel sensor polling</strong>
-            <span class="pill neutral">default: 2</span>
-          </div>
-          <div class="empty" style="margin-top:6px;">
-            Higher values can reduce total poll time when you have many sensors, but may stress Bluetooth.
-          </div>
-        </div>
-        <label for="sensor_parallelism">Max parallel sensor polls (1..6)</label>
-        <input id="sensor_parallelism" type="number" min="1" max="6" value="2" />
-      </div>
-    </div>
-
   </div>
 
   <script>
@@ -395,8 +616,25 @@
     let mjpgV4l2Controls = {};
     let mjpgLiveApplyTimer = null;
     let mjpgLiveApplyInFlight = false;
+    let featureContainers = { webcam: { installed: true }, notifications: { installed: false } };
     const lastRefreshFeedback = {};
     const SENSOR_ID_MISSING_MSG = "Sensor has no id; refresh the page to repair it.";
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function escapeAttr(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;");
+    }
 
     function formatProbeSummary(probe) {
       if (!probe || typeof probe !== "object") return "no readings returned";
@@ -771,24 +1009,119 @@
     }
 
     function showSensorsMessage(message, isError) {
-      showOptionsTab("sensors");
+      showNavSection("sensors");
+      showSensorSubTab("overview");
       showSectionMessage("sensors_message", message, isError);
     }
 
     function showOnboardMessage(message, isError) {
-      showOptionsTab("onboard");
+      showNavSection("sensors");
+      showSensorSubTab("onboard");
       showSectionMessage("onboard_message", message, isError);
     }
 
-    function showOptionsTab(tabName) {
-      document.querySelectorAll(".options-tab").forEach((btn) => {
-        const active = btn.getAttribute("data-options-tab") === tabName;
+    function normalizeFeatureContainers(raw) {
+      const src = (raw && typeof raw === "object") ? raw : {};
+      const webcamInstalled = !!(src.webcam && src.webcam.installed);
+      const notificationsInstalled = !!(src.notifications && src.notifications.installed);
+      return {
+        webcam: { installed: webcamInstalled },
+        notifications: { installed: notificationsInstalled },
+      };
+    }
+
+    function isContainerInstalled(name) {
+      return !!(featureContainers && featureContainers[name] && featureContainers[name].installed);
+    }
+
+    function renderContainerAvailability() {
+      const webcamInstalled = isContainerInstalled("webcam");
+      const notifInstalled = isContainerInstalled("notifications");
+
+      const webcamGate = document.getElementById("webcam_container_gate");
+      const webcamContent = document.getElementById("webcam_container_content");
+      const notifGate = document.getElementById("notifications_container_gate");
+      const notifContent = document.getElementById("notifications_container_content");
+
+      if (webcamGate) webcamGate.hidden = webcamInstalled;
+      if (webcamContent) webcamContent.hidden = !webcamInstalled;
+      if (notifGate) notifGate.hidden = notifInstalled;
+      if (notifContent) notifContent.hidden = !notifInstalled;
+    }
+
+    async function setContainerInstalled(containerName, installed) {
+      const data = await apiRequest("/api/settings/containers", "POST", {
+        container: containerName,
+        installed: Boolean(installed),
+      });
+      featureContainers = normalizeFeatureContainers(data.feature_containers);
+      renderContainerAvailability();
+      return data;
+    }
+
+    const NAV_SECTIONS = ["sensors", "data", "weather", "webcam", "notifications"];
+
+    function closeSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const backdrop = document.getElementById("sidebar_backdrop");
+      const burger = document.getElementById("burger_btn");
+      if (sidebar) sidebar.classList.remove("open");
+      if (backdrop) backdrop.classList.remove("open");
+      if (burger) burger.setAttribute("aria-expanded", "false");
+    }
+
+    function openSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      const backdrop = document.getElementById("sidebar_backdrop");
+      const burger = document.getElementById("burger_btn");
+      if (sidebar) sidebar.classList.add("open");
+      if (backdrop) backdrop.classList.add("open");
+      if (burger) burger.setAttribute("aria-expanded", "true");
+    }
+
+    function showNavSection(sectionName) {
+      const name = NAV_SECTIONS.includes(sectionName) ? sectionName : "sensors";
+      document.querySelectorAll(".nav-item").forEach((btn) => {
+        const active = btn.getAttribute("data-nav") === name;
         btn.classList.toggle("active", active);
         btn.setAttribute("aria-selected", active ? "true" : "false");
       });
-      document.querySelectorAll(".options-panel").forEach((panel) => {
-        panel.hidden = panel.id !== `options_panel_${tabName}`;
+      document.querySelectorAll(".nav-section").forEach((section) => {
+        section.hidden = section.id !== `nav_section_${name}`;
       });
+      if (window.location.hash !== `#${name}` && !window.location.hash.startsWith("#sensor-")) {
+        history.replaceState(null, "", `#${name}`);
+      }
+      closeSidebar();
+    }
+
+    function showSensorSubTab(tabName) {
+      const tab = tabName === "onboard" ? "onboard" : "overview";
+      document.querySelectorAll("[data-sensor-tab]").forEach((btn) => {
+        const active = btn.getAttribute("data-sensor-tab") === tab;
+        btn.classList.toggle("active", active);
+        btn.setAttribute("aria-selected", active ? "true" : "false");
+      });
+      document.querySelectorAll("#nav_section_sensors .options-panel").forEach((panel) => {
+        panel.hidden = panel.id !== `options_panel_${tab}`;
+      });
+    }
+
+    function initNavFromHash() {
+      const hash = (window.location.hash || "").trim().replace(/^#/, "");
+      if (hash.startsWith("sensor-")) {
+        showNavSection("sensors");
+        showSensorSubTab("overview");
+        return hash;
+      }
+      if (NAV_SECTIONS.includes(hash)) {
+        showNavSection(hash);
+        if (hash === "sensors") showSensorSubTab("overview");
+        return hash;
+      }
+      showNavSection("sensors");
+      showSensorSubTab("overview");
+      return "";
     }
 
     function restoreChartTimezoneUI() {
@@ -907,10 +1240,24 @@
       return wrap;
     }
 
+    function streamSourceOf(row) {
+      return row && String(row.source || "").toLowerCase() === "external" ? "external" : "builtin";
+    }
+
+    function isExternalStreamRow(row) {
+      return streamSourceOf(row) === "external";
+    }
+
     function ensureWebcamStartRow(box, idx) {
+      const rowData = webcamEditRows[idx];
+      const existing = box.querySelector(".wc-start-row");
+      if (isExternalStreamRow(rowData)) {
+        if (existing) existing.remove();
+        return;
+      }
       const urlEl = box.querySelector(".wc-inp-url");
       const port = resolvedMjpegPortForRow(urlEl ? urlEl.value : "");
-      let row = box.querySelector(".wc-start-row");
+      let row = existing;
       if (!row) {
         row = document.createElement("div");
         row.className = "wc-start-row";
@@ -1024,6 +1371,23 @@
         title.textContent = `Stream ${idx + 1}`;
         box.appendChild(title);
 
+        const srcSel = document.createElement("select");
+        srcSel.className = "wc-inp-source";
+        srcSel.innerHTML = '<option value="builtin">Built-in (mjpg-streamer on this Pi)</option><option value="external">External stream URL</option>';
+        srcSel.value = streamSourceOf(row);
+        srcSel.addEventListener("change", () => {
+          webcamEditRows[idx].source = srcSel.value;
+          renderWebcamStreamsEditor();
+        });
+        box.appendChild(wcStreamField("Stream source", srcSel));
+
+        const srcHint = document.createElement("p");
+        srcHint.className = "wc-source-hint";
+        srcHint.textContent = isExternalStreamRow(row)
+          ? "Paste an http(s) MJPEG or viewer page URL from your camera, NVR, or another host. Click Validate URL, then Save webcam streams."
+          : "Use Start MJPEG server below, or paste a URL after the stream is running on this Pi.";
+        box.appendChild(srcHint);
+
         const inpId = document.createElement("input");
         inpId.type = "text";
         inpId.className = "wc-inp-id";
@@ -1043,13 +1407,47 @@
         const inpU = document.createElement("input");
         inpU.type = "text";
         inpU.className = "wc-inp-url";
-        inpU.placeholder = "http://192.168.x.x:8899/mjpeg/stream_simple.html";
+        inpU.placeholder = isExternalStreamRow(row)
+          ? "http://192.168.1.50:8080/video.mjpg"
+          : "http://192.168.x.x:8080/?action=stream (optional until Start)";
         inpU.value = row.stream_url || "";
         inpU.addEventListener("input", () => {
           webcamEditRows[idx].stream_url = inpU.value;
           ensureWebcamStartRow(box, idx);
         });
         box.appendChild(wcStreamField("Stream URL", inpU));
+
+        if (isExternalStreamRow(row)) {
+          const validateStatus = document.createElement("div");
+          validateStatus.className = "wc-validate-status";
+          box.appendChild(validateStatus);
+          const validateBtn = document.createElement("button");
+          validateBtn.type = "button";
+          validateBtn.className = "btn";
+          validateBtn.setAttribute("data-write", "1");
+          validateBtn.textContent = "Validate URL";
+          validateBtn.addEventListener("click", async () => {
+            syncWebcamRowsFromDom();
+            const url = (webcamEditRows[idx] && webcamEditRows[idx].stream_url || "").trim();
+            validateStatus.className = "wc-validate-status pending";
+            validateStatus.textContent = "Checking URL…";
+            validateBtn.disabled = true;
+            try {
+              if (!url) throw new Error("Enter a stream URL first.");
+              const data = await apiRequest("/api/webcam/validate-url", "POST", { stream_url: url });
+              validateStatus.className = "wc-validate-status ok";
+              const kind = data.content_kind ? ` (${data.content_kind})` : "";
+              validateStatus.textContent = `OK${kind}. Safe to save.` + (data.warnings && data.warnings.length ? " " + data.warnings.join(" ") : "");
+            } catch (err) {
+              validateStatus.className = "wc-validate-status err";
+              validateStatus.textContent = String(err);
+            } finally {
+              validateBtn.disabled = false;
+              updateAuthNotice();
+            }
+          });
+          box.appendChild(validateBtn);
+        }
 
         const sel = document.createElement("select");
         sel.className = "wc-sel-sensors";
@@ -1096,10 +1494,12 @@
         const idEl = box.querySelector(".wc-inp-id");
         const labelEl = box.querySelector(".wc-inp-label");
         const urlEl = box.querySelector(".wc-inp-url");
+        const srcEl = box.querySelector(".wc-inp-source");
         const selEl = box.querySelector(".wc-sel-sensors");
         if (idEl) webcamEditRows[idx].id = (idEl.value || "").trim() || webcamEditRows[idx].id;
         if (labelEl) webcamEditRows[idx].label = labelEl.value || "";
         if (urlEl) webcamEditRows[idx].stream_url = urlEl.value || "";
+        if (srcEl) webcamEditRows[idx].source = srcEl.value || "builtin";
         if (selEl) {
           webcamEditRows[idx].sensor_ids = Array.from(selEl.selectedOptions).map((o) => o.value);
         }
@@ -1149,24 +1549,29 @@
         const card = document.createElement("div");
         card.className = "card";
         card.id = `sensor-${s.id}`;
+        const safeId = escapeHtml(s.id);
+        const attrId = escapeAttr(s.id);
+        const safeName = escapeHtml(s.name || s.id);
+        const safeMac = escapeHtml(s.mac);
+        const safeAge = escapeHtml(age);
         card.innerHTML = `
           <div class="row" style="justify-content:space-between;">
-            <strong>${s.name || s.id}</strong>
+            <strong>${safeName}</strong>
             <span class="pill ${s.enabled === false ? "neutral" : (stale ? "warn" : "ok")}">${s.enabled === false ? "disabled" : (stale ? "stale" : "ok")}</span>
           </div>
-          <div class="empty" style="margin-top:6px;">${s.id} | ${s.mac}</div>
+          <div class="empty" style="margin-top:6px;">${safeId} | ${safeMac}</div>
           <div class="row" style="margin-top:10px;">
             <span class="pill ${batteryTone}">battery: ${typeof battery === "number" ? `${battery}%` : "-"}</span>
-            <span class="pill ${stale ? "warn" : "neutral"}">last success: ${age}</span>
+            <span class="pill ${stale ? "warn" : "neutral"}">last success: ${safeAge}</span>
             <span class="pill neutral">interval: ${sensorPollMinutes}m</span>
           </div>
           <div style="margin-top:8px;display:flex;gap:8px;">
-            <button class="btn primary" data-write="1" data-action="refresh" data-id="${s.id}">Refresh now</button>
-            <button class="btn" data-write="1" data-action="rename" data-id="${s.id}" data-current-name="${(s.name || s.id).replace(/"/g, '&quot;')}">Rename</button>
-            <button class="btn" data-write="1" data-action="toggle" data-id="${s.id}" data-enabled="${s.enabled !== false}">
+            <button class="btn primary" data-write="1" data-action="refresh" data-id="${attrId}">Refresh now</button>
+            <button class="btn" data-write="1" data-action="rename" data-id="${attrId}" data-current-name="${escapeAttr(s.name || s.id)}">Rename</button>
+            <button class="btn" data-write="1" data-action="toggle" data-id="${attrId}" data-enabled="${s.enabled !== false}">
               ${s.enabled !== false ? "Disable" : "Enable"}
             </button>
-            <button class="btn danger" data-write="1" data-action="remove" data-id="${s.id}">Remove</button>
+            <button class="btn danger" data-write="1" data-action="remove" data-id="${attrId}">Remove</button>
           </div>
           <div class="sensor-refresh-status callout pending" aria-live="polite"></div>
         `;
@@ -1278,38 +1683,50 @@
         if (resp.ok) statusData = await resp.json();
       } catch (_) {}
 
+      try {
+        const containersResp = await apiRequest("/api/settings/containers");
+        featureContainers = normalizeFeatureContainers(containersResp.feature_containers);
+      } catch (_) {
+        featureContainers = normalizeFeatureContainers(featureContainers);
+      }
+      renderContainerAvailability();
+
       const sensorsConfig = await apiRequest("/api/sensors");
       lastSensorsForWebcam = sensorsConfig.sensors || [];
-      try {
-        const wc = await apiRequest("/api/settings/webcams");
-        webcamEditRows = JSON.parse(JSON.stringify(wc.webcam_streams || []));
-      } catch (_) {
+      if (isContainerInstalled("webcam")) {
+        try {
+          const wc = await apiRequest("/api/settings/webcams");
+          webcamEditRows = JSON.parse(JSON.stringify(wc.webcam_streams || []));
+        } catch (_) {
+          webcamEditRows = [];
+        }
+        try {
+          const mj = await apiRequest("/api/settings/mjpg-streamer");
+          syncMjpegAutofillFromApi(mj);
+          const rootInp = document.getElementById("mjpg_streamer_root");
+          const st = document.getElementById("mjpg_streamer_status");
+          if (rootInp) rootInp.value = mj.mjpg_streamer_root_saved || "";
+          populateMjpgCameraForm(mj);
+          if (st) {
+            const dir = mj.resolved_install_dir || "";
+            if (mj.mjpg_streamer_found) {
+              st.style.color = "#116329";
+              st.textContent = `Found mjpg_streamer under ${dir}.`;
+            } else {
+              st.style.color = "#9a6700";
+              st.textContent =
+                `No mjpg_streamer at ${dir}. Set the path above (or GROWCONTROL_MJPG_STREAMER_ROOT for the API service)${mj.mjpg_streamer_root_from_env ? "; env var is set but binary still missing there" : ""}.`;
+            }
+          }
+        } catch (_) {
+          const st = document.getElementById("mjpg_streamer_status");
+          if (st) st.textContent = "";
+        }
+        await refreshMjpgDeviceList();
+        renderWebcamStreamsEditor();
+      } else {
         webcamEditRows = [];
       }
-      try {
-        const mj = await apiRequest("/api/settings/mjpg-streamer");
-        syncMjpegAutofillFromApi(mj);
-        const rootInp = document.getElementById("mjpg_streamer_root");
-        const st = document.getElementById("mjpg_streamer_status");
-        if (rootInp) rootInp.value = mj.mjpg_streamer_root_saved || "";
-        populateMjpgCameraForm(mj);
-        if (st) {
-          const dir = mj.resolved_install_dir || "";
-          if (mj.mjpg_streamer_found) {
-            st.style.color = "#116329";
-            st.textContent = `Found mjpg_streamer under ${dir}.`;
-          } else {
-            st.style.color = "#9a6700";
-            st.textContent =
-              `No mjpg_streamer at ${dir}. Set the path above (or GROWCONTROL_MJPG_STREAMER_ROOT for the API service)${mj.mjpg_streamer_root_from_env ? "; env var is set but binary still missing there" : ""}.`;
-          }
-        }
-      } catch (_) {
-        const st = document.getElementById("mjpg_streamer_status");
-        if (st) st.textContent = "";
-      }
-      await refreshMjpgDeviceList();
-      renderWebcamStreamsEditor();
 
       const retention = await apiRequest("/api/settings/retention");
       if (retention.retention_key) document.getElementById("retention_select").value = retention.retention_key;
@@ -1456,10 +1873,67 @@
         writeLocked = Boolean(health.requires_api_key) && !apiKey;
       } catch (_) {}
       updateAuthNotice();
-      document.querySelectorAll("#scan_btn,#verify_btn,#add_btn,#save_retention_btn,#clear_data_btn,#save_weather_btn,#save_webcams_btn,#webcam_add_stream_btn,#save_mjpg_streamer_btn").forEach((el) => el.setAttribute("data-write", "1"));
+      document.querySelectorAll("#scan_btn,#verify_btn,#add_btn,#save_retention_btn,#clear_data_btn,#save_weather_btn,#save_webcams_btn,#webcam_add_stream_btn,#save_mjpg_streamer_btn,#install_webcam_container_btn,#remove_webcam_container_btn,#install_notifications_container_btn,#remove_notifications_container_btn").forEach((el) => el.setAttribute("data-write", "1"));
+
+      document.getElementById("install_webcam_container_btn").addEventListener("click", async () => {
+        const msg = document.getElementById("webcam_container_message");
+        msg.textContent = "Installing Webcam container...";
+        try {
+          await setContainerInstalled("webcam", true);
+          msg.style.color = "#116329";
+          msg.textContent = "Webcam container installed.";
+          await refresh();
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
+      document.getElementById("remove_webcam_container_btn").addEventListener("click", async () => {
+        if (!window.confirm("Remove Webcam container? Webcam settings and controls will be hidden.")) return;
+        const msg = document.getElementById("webcam_container_message");
+        msg.textContent = "Removing Webcam container...";
+        try {
+          await setContainerInstalled("webcam", false);
+          msg.style.color = "#116329";
+          msg.textContent = "Webcam container removed.";
+          showNavSection("webcam");
+          await refresh();
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
+      document.getElementById("install_notifications_container_btn").addEventListener("click", async () => {
+        const msg = document.getElementById("notifications_container_message");
+        msg.textContent = "Installing Notifications container...";
+        try {
+          await setContainerInstalled("notifications", true);
+          msg.style.color = "#116329";
+          msg.textContent = "Notifications container installed.";
+          await refresh();
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
+      document.getElementById("remove_notifications_container_btn").addEventListener("click", async () => {
+        if (!window.confirm("Remove Notifications container?")) return;
+        const msg = document.getElementById("notifications_container_message");
+        msg.textContent = "Removing Notifications container...";
+        try {
+          await setContainerInstalled("notifications", false);
+          msg.style.color = "#116329";
+          msg.textContent = "Notifications container removed.";
+          showNavSection("notifications");
+          await refresh();
+        } catch (err) {
+          msg.style.color = "#b42318";
+          msg.textContent = String(err);
+        }
+      });
 
       document.getElementById("webcam_add_stream_btn").addEventListener("click", () => {
-        webcamEditRows.push({ id: "cam_" + Date.now(), label: "", stream_url: "", sensor_ids: [] });
+        webcamEditRows.push({ id: "cam_" + Date.now(), label: "", stream_url: "", sensor_ids: [], source: "builtin" });
         renderWebcamStreamsEditor();
       });
 
@@ -1512,6 +1986,7 @@
             id: r.id || "",
             label: String(r.label || ""),
             stream_url: String(r.stream_url || ""),
+            source: streamSourceOf(r),
             sensor_ids: Array.isArray(r.sensor_ids) ? r.sensor_ids : [],
           }));
           const data = await apiRequest("/api/settings/webcams", "POST", { webcam_streams: payload });
@@ -1550,24 +2025,38 @@
         }
       });
 
-      document.querySelectorAll(".options-tab").forEach((btn) => {
-        btn.addEventListener("click", () => showOptionsTab(btn.getAttribute("data-options-tab")));
+      document.querySelectorAll(".nav-item").forEach((btn) => {
+        btn.addEventListener("click", () => showNavSection(btn.getAttribute("data-nav")));
+      });
+      document.querySelectorAll("[data-sensor-tab]").forEach((btn) => {
+        btn.addEventListener("click", () => showSensorSubTab(btn.getAttribute("data-sensor-tab")));
+      });
+      document.getElementById("burger_btn").addEventListener("click", () => {
+        const sidebar = document.getElementById("sidebar");
+        if (sidebar && sidebar.classList.contains("open")) closeSidebar();
+        else openSidebar();
+      });
+      document.getElementById("sidebar_backdrop").addEventListener("click", closeSidebar);
+      window.addEventListener("hashchange", () => {
+        const hash = initNavFromHash();
+        if (hash.startsWith("sensor-")) scrollToSensorHash(`#${hash}`);
       });
 
       await refresh();
 
-      // Deep-link support from Dashboard: Options.html#sensor-<id>
-      const hash = (window.location.hash || "").trim();
-      if (hash && hash.startsWith("#sensor-")) {
-        showOptionsTab("sensors");
-        const el = document.getElementById(hash.slice(1));
-        if (el) {
-          el.classList.add("highlight");
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-          window.setTimeout(() => el.classList.remove("highlight"), 2500);
-        }
-      }
+      const hash = initNavFromHash();
+      if (hash.startsWith("sensor-")) scrollToSensorHash(`#${hash}`);
     });
+
+    function scrollToSensorHash(hash) {
+      if (!hash || !hash.startsWith("#sensor-")) return;
+      const el = document.getElementById(hash.slice(1));
+      if (el) {
+        el.classList.add("highlight");
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.setTimeout(() => el.classList.remove("highlight"), 2500);
+      }
+    }
   </script>
 </body>
 </html>

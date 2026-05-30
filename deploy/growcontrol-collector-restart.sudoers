@@ -1,0 +1,3 @@
+# Allow the Growcontrol service user to restart only the collector (no password).
+# Installed by install_phase1.sh as /etc/sudoers.d/growcontrol-collector-restart
+pi ALL=(root) NOPASSWD: /bin/systemctl restart growcontrol-collector.service

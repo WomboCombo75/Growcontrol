@@ -3,7 +3,6 @@
   "status_file": "status.json",
   "weather_file": "weatherdata",
   "weather_enabled": false,
-  "openweather_api_key": "",
   "sensor_history_limit": 10,
   "sensor_poll_minutes": 60,
   "sensor_parallelism": 2,
@@ -11,11 +10,27 @@
   "weather_lat": 0,
   "weather_lon": 0,
   "weather_units": "metric",
+  "feature_containers": {
+    "webcam": {
+      "installed": true
+    },
+    "notifications": {
+      "installed": false
+    }
+  },
   "request_timeout_seconds": 20,
   "loop_sleep_seconds": 5,
   "log_file": "logs/growcontrol.log",
   "database_path": "data/growcontrol.db",
-  "webcam_streams": [],
+  "webcam_streams": [
+    {
+      "id": "Cam_Example",
+      "label": "Example",
+      "source": "builtin",
+      "stream_url": "",
+      "sensor_ids": []
+    }
+  ],
   "mjpg_streamer": {
     "mjpg_streamer_root": "",
     "default_http_port": 8080,

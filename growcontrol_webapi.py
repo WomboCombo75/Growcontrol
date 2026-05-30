@@ -32,6 +32,17 @@ from growcontrol_cli import (
     remove_sensor,
     validate_mac,
 )
+from growcontrol_env import (
+    migrate_openweather_key_from_settings,
+    openweather_api_key_configured,
+    set_openweather_api_key,
+)
+from growcontrol_webcam import (
+    normalize_stream_source,
+    parse_webcam_stream_url,
+    probe_external_webcam_url,
+    validate_webcam_stream_entry,
+)
 from growcontrol_storage import GrowcontrolStorage, RETENTION_CHOICES
 
 
@@ -44,13 +55,52 @@ BIND_HOST = os.getenv("GROWCONTROL_WEBAPI_HOST", "127.0.0.1")
 BIND_PORT = int(os.getenv("GROWCONTROL_WEBAPI_PORT", "8788"))
 API_KEY = os.getenv("GROWCONTROL_API_KEY", "").strip()
 STORAGE = GrowcontrolStorage(DB_FILE)
+DEFAULT_FEATURE_CONTAINERS: Dict[str, Dict[str, bool]] = {
+    "webcam": {"installed": True},
+    "notifications": {"installed": False},
+}
+
+
+def normalize_feature_containers(raw: Any) -> Dict[str, Dict[str, bool]]:
+    src = raw if isinstance(raw, dict) else {}
+    out: Dict[str, Dict[str, bool]] = {}
+    for name, defaults in DEFAULT_FEATURE_CONTAINERS.items():
+        entry = src.get(name)
+        if isinstance(entry, dict):
+            installed = bool(entry.get("installed", defaults["installed"]))
+        else:
+            installed = bool(defaults["installed"])
+        out[name] = {"installed": installed}
+    return out
+
+
+def ensure_feature_containers_in_settings(settings: Dict[str, Any]) -> tuple[Dict[str, Any], bool]:
+    current = settings.get("feature_containers")
+    normalized = normalize_feature_containers(current)
+    changed = normalized != current
+    settings["feature_containers"] = normalized
+    return settings, changed
+
+
+def container_is_installed(settings: Dict[str, Any], container_name: str) -> bool:
+    containers = normalize_feature_containers(settings.get("feature_containers"))
+    entry = containers.get(container_name) or {}
+    return bool(entry.get("installed", False))
 
 def load_settings_file() -> Dict[str, Any]:
     with SETTINGS_FILE.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+        settings = json.load(handle)
+    settings, feature_changed = ensure_feature_containers_in_settings(settings)
+    settings, migrated = migrate_openweather_key_from_settings(settings)
+    if feature_changed or migrated:
+        write_settings_file(settings)
+    return settings
 
 
 def write_settings_file(settings: Dict[str, Any]) -> None:
+    settings = dict(settings)
+    settings, _ = ensure_feature_containers_in_settings(settings)
+    migrate_openweather_key_from_settings(settings)
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
 
@@ -93,12 +143,19 @@ def normalize_webcam_streams(raw: Any) -> tuple[List[Dict[str, Any]], List[str]]
         seen_ids.add(sid)
         label = str(item.get("label", "")).strip() or sid
         url = str(item.get("stream_url", "")).strip()
-        if url:
-            parsed = urlparse(url)
-            if parsed.scheme not in ("http", "https"):
-                raise ValueError(f"webcam_streams[{i}].stream_url must use http or https")
-            if len(url) > 2048:
-                raise ValueError("webcam stream URL is too long (max 2048 characters)")
+        source = normalize_stream_source(item.get("source"))
+        if url or source == "external":
+            try:
+                normalized_item, entry_warnings = validate_webcam_stream_entry(
+                    {"id": sid, "label": label, "stream_url": url, "source": source, "sensor_ids": item.get("sensor_ids", [])},
+                    index=i,
+                    probe_external=True,
+                )
+                url = str(normalized_item.get("stream_url", "")).strip()
+                source = str(normalized_item.get("source", "builtin"))
+                warnings.extend(entry_warnings)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
         raw_sensors = item.get("sensor_ids", [])
         if not isinstance(raw_sensors, list):
             raw_sensors = []
@@ -114,10 +171,45 @@ def normalize_webcam_streams(raw: Any) -> tuple[List[Dict[str, Any]], List[str]]
             clean_sids.append(xs)
         if dropped:
             warnings.append(f"stream {sid!r}: dropped unknown sensor_ids {dropped}")
-        out.append({"id": sid, "label": label, "stream_url": url, "sensor_ids": clean_sids})
+        out.append({"id": sid, "label": label, "stream_url": url, "source": source, "sensor_ids": clean_sids})
     if len(out) > 24:
         raise ValueError("too many webcam streams (max 24)")
     return out, warnings
+
+
+def _cors_allow_origin(handler: BaseHTTPRequestHandler) -> str:
+    """
+    Reflect Origin only for same-host browser requests (Dashboard/Options via nginx).
+    Omit CORS for cross-site origins so LAN clients cannot be read by arbitrary websites.
+    """
+    origin = (handler.headers.get("Origin") or "").strip()
+    if not origin:
+        return ""
+    host_header = (handler.headers.get("Host") or "").strip()
+    if not host_header:
+        return ""
+    try:
+        o = urlparse(origin)
+        origin_host = (o.hostname or "").lower()
+        req_host = host_header.split(":")[0].lower()
+    except Exception:  # noqa: BLE001
+        return ""
+    if not origin_host or not req_host:
+        return ""
+    loopback = frozenset({"localhost", "127.0.0.1", "::1"})
+    if origin_host == req_host or (origin_host in loopback and req_host in loopback):
+        return origin
+    return ""
+
+
+def apply_cors_headers(handler: BaseHTTPRequestHandler) -> None:
+    allowed = _cors_allow_origin(handler)
+    if not allowed:
+        return
+    handler.send_header("Access-Control-Allow-Origin", allowed)
+    handler.send_header("Vary", "Origin")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
+    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 
 
 def json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -125,9 +217,7 @@ def json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[st
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json")
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
-    handler.send_header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+    apply_cors_headers(handler)
     handler.end_headers()
     handler.wfile.write(body)
 
@@ -161,17 +251,18 @@ def parse_sensor_id_from_path(path: str) -> str:
 
 
 def restart_collector() -> None:
-    result = subprocess.run(
-        ["systemctl", "restart", COLLECTOR_SERVICE],
-        capture_output=True,
-        text=True,
-        check=False,
+    cmd = ["systemctl", "restart", COLLECTOR_SERVICE]
+    attempts: List[List[str]] = [["sudo", "-n", *cmd], cmd]
+    last_err = ""
+    for argv in attempts:
+        result = subprocess.run(argv, capture_output=True, text=True, check=False)
+        if result.returncode == 0:
+            return
+        last_err = f"{result.stdout.strip()} {result.stderr.strip()}".strip()
+    raise RuntimeError(
+        f"Failed to restart {COLLECTOR_SERVICE}: {last_err}. "
+        "Re-run install_phase1.sh to install /etc/sudoers.d/growcontrol-collector-restart."
     )
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Failed to restart {COLLECTOR_SERVICE}: "
-            f"{result.stdout.strip()} {result.stderr.strip()}"
-        )
 
 
 def service_state(service_name: str) -> str:
@@ -516,9 +607,7 @@ def persist_mjpg_start_options(settings: Dict[str, Any], body: Dict[str, Any]) -
     stream_id = str(body.get("webcam_stream_id", "") or "").strip()
     stream_url = str(body.get("stream_url", "") or "").strip()
     if stream_id and stream_url:
-        parsed = urlparse(stream_url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("stream_url must use http or https")
+        parse_webcam_stream_url(stream_url)
         streams = settings.get("webcam_streams")
         if not isinstance(streams, list):
             streams = []
@@ -1169,9 +1258,18 @@ class Handler(BaseHTTPRequestHandler):
                         "weather_lat": float(settings.get("weather_lat", 0.0)),
                         "weather_lon": float(settings.get("weather_lon", 0.0)),
                         "weather_units": str(settings.get("weather_units", "metric")),
-                        "openweather_api_key_set": bool(str(settings.get("openweather_api_key", "")).strip()),
+                        "openweather_api_key_set": openweather_api_key_configured(),
                     },
                 )
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": str(exc)})
+            return
+
+        if parsed.path == "/api/settings/containers":
+            try:
+                settings = load_settings_file()
+                containers = normalize_feature_containers(settings.get("feature_containers"))
+                json_response(self, 200, {"feature_containers": containers})
             except Exception as exc:  # noqa: BLE001
                 json_response(self, 500, {"error": str(exc)})
             return
@@ -1179,10 +1277,14 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/settings/webcams":
             try:
                 settings = load_settings_file()
+                installed = container_is_installed(settings, "webcam")
+                if not installed:
+                    json_response(self, 200, {"container_installed": False, "webcam_streams": []})
+                    return
                 streams = settings.get("webcam_streams") or []
                 if not isinstance(streams, list):
                     streams = []
-                json_response(self, 200, {"webcam_streams": streams})
+                json_response(self, 200, {"container_installed": True, "webcam_streams": streams})
             except Exception as exc:  # noqa: BLE001
                 json_response(self, 500, {"error": str(exc)})
             return
@@ -1190,6 +1292,27 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/settings/mjpg-streamer":
             try:
                 settings = load_settings_file()
+                installed = container_is_installed(settings, "webcam")
+                if not installed:
+                    json_response(
+                        self,
+                        200,
+                        {
+                            "container_installed": False,
+                            "mjpg_streamer_root_saved": "",
+                            "mjpg_streamer_root_from_env": False,
+                            "resolved_install_dir": "",
+                            "mjpg_streamer_found": False,
+                            "args": None,
+                            "use_custom_args": False,
+                            "camera": dict(DEFAULT_MJPG_CAMERA),
+                            "built_input_args": "",
+                            "v4l2_controls": {},
+                            "default_stream_url_path": DEFAULT_MJPEG_STREAM_AUTOFILL_PATH,
+                            "default_http_port": DEFAULT_MJPEG_HTTP_PORT,
+                        },
+                    )
+                    return
                 install_dir = resolved_mjpg_install_dir(settings)
                 exe = mjpg_streamer_executable_path(settings)
                 saved = mjpg_streamer_root_from_settings_only(settings)
@@ -1217,6 +1340,7 @@ class Handler(BaseHTTPRequestHandler):
                         "v4l2_controls": query_v4l2_controls(camera_out.get("device", "/dev/video0")),
                         "default_stream_url_path": mjpeg_autofill_path_from_settings(settings),
                         "default_http_port": mjpeg_default_http_port_from_settings(settings),
+                        "container_installed": True,
                     },
                 )
             except Exception as exc:  # noqa: BLE001
@@ -1369,10 +1493,10 @@ class Handler(BaseHTTPRequestHandler):
             settings["weather_lat"] = lat
             settings["weather_lon"] = lon
             settings["weather_units"] = units
-            if api_key:
-                settings["openweather_api_key"] = api_key
 
             try:
+                if api_key:
+                    set_openweather_api_key(api_key)
                 write_settings_file(settings)
                 json_response(
                     self,
@@ -1383,12 +1507,53 @@ class Handler(BaseHTTPRequestHandler):
                         "weather_lat": lat,
                         "weather_lon": lon,
                         "weather_units": units,
-                        "openweather_api_key_set": bool(str(settings.get("openweather_api_key", "")).strip()),
-                        "note": "Collector auto-reloads settings.json when it changes.",
+                        "openweather_api_key_set": openweather_api_key_configured(),
+                        "note": "Weather API key is stored in .env (OPENWEATHER_API_KEY). Collector reloads settings.json when it changes.",
                     },
                 )
             except Exception as exc:  # noqa: BLE001
                 json_response(self, 500, {"error": str(exc)})
+            return
+
+        if path == "/api/settings/containers":
+            try:
+                settings = load_settings_file()
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": f"failed to load settings: {exc}"})
+                return
+            container = str(body.get("container", "")).strip().lower()
+            if container not in DEFAULT_FEATURE_CONTAINERS:
+                json_response(self, 400, {"error": "invalid container", "choices": list(DEFAULT_FEATURE_CONTAINERS.keys())})
+                return
+            if "installed" not in body:
+                json_response(self, 400, {"error": "missing field: installed"})
+                return
+            installed = bool(body.get("installed"))
+            containers = normalize_feature_containers(settings.get("feature_containers"))
+            containers[container]["installed"] = installed
+            settings["feature_containers"] = containers
+            try:
+                write_settings_file(settings)
+                json_response(self, 200, {"success": True, "feature_containers": containers})
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": str(exc)})
+            return
+
+        if path == "/api/webcam/validate-url":
+            try:
+                settings = load_settings_file()
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": f"failed to load settings: {exc}"})
+                return
+            if not container_is_installed(settings, "webcam"):
+                json_response(self, 403, {"success": False, "error": "webcam container is not installed"})
+                return
+            stream_url = str(body.get("stream_url", "")).strip()
+            try:
+                result = probe_external_webcam_url(stream_url)
+                json_response(self, 200, {"success": True, **result})
+            except ValueError as exc:
+                json_response(self, 400, {"success": False, "error": str(exc)})
             return
 
         if path == "/api/settings/webcams":
@@ -1396,6 +1561,9 @@ class Handler(BaseHTTPRequestHandler):
                 settings = load_settings_file()
             except Exception as exc:  # noqa: BLE001
                 json_response(self, 500, {"error": f"failed to load settings: {exc}"})
+                return
+            if not container_is_installed(settings, "webcam"):
+                json_response(self, 403, {"error": "webcam container is not installed"})
                 return
             raw_streams = body.get("webcam_streams")
             try:
@@ -1416,7 +1584,7 @@ class Handler(BaseHTTPRequestHandler):
                     "success": True,
                     "webcam_streams": clean,
                     "warnings": warnings,
-                    "note": "Dashboard loads streams in the browser; use http(s) reachable from your viewer device (often http://<pi-ip>:PORT/… not localhost elsewhere). *.html URLs show in iframe; MJPEG URLs go in <img>.",
+                    "note": "Dashboard loads streams in the browser. Built-in streams use mjpg-streamer (Start/Stop). External streams must pass URL safety checks (http/https image or MJPEG/HTML viewer only — no downloads).",
                 },
             )
             return
@@ -1426,6 +1594,9 @@ class Handler(BaseHTTPRequestHandler):
                 settings = load_settings_file()
             except Exception as exc:  # noqa: BLE001
                 json_response(self, 500, {"error": f"failed to load settings: {exc}"})
+                return
+            if not container_is_installed(settings, "webcam"):
+                json_response(self, 403, {"error": "webcam container is not installed"})
                 return
             block = dict(_mjpg_settings_block(settings))
             if "mjpg_streamer_root" in body:
@@ -1629,6 +1800,9 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:  # noqa: BLE001
                 json_response(self, 500, {"error": f"failed to load settings: {exc}"})
                 return
+            if not container_is_installed(settings, "webcam"):
+                json_response(self, 403, {"error": "webcam container is not installed"})
+                return
             try:
                 camera, notes = merge_camera_into_settings(settings, camera_raw)
                 applied, errors = apply_v4l2_camera_live(camera["device"], camera)
@@ -1655,6 +1829,14 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/mjpg":
+            try:
+                settings = load_settings_file()
+            except Exception as exc:  # noqa: BLE001
+                json_response(self, 500, {"error": f"failed to load settings: {exc}"})
+                return
+            if not container_is_installed(settings, "webcam"):
+                json_response(self, 403, {"error": "webcam container is not installed"})
+                return
             try:
                 port = int(body.get("port"))
             except (TypeError, ValueError):

@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
+
+from growcontrol_env import migrate_openweather_key_from_settings, openweather_api_key_from_env
 from btlewrap.bluepy import BluepyBackend
 from miflora.miflora_poller import (
     MI_BATTERY,
@@ -93,8 +95,11 @@ def load_settings(path: Path) -> Dict[str, Any]:
     if missing:
         raise ValueError(f"Missing settings keys in {path}: {', '.join(missing)}")
     settings.setdefault("weather_enabled", True)
-    settings.setdefault("openweather_api_key", "")
     settings.setdefault("database_path", "data/growcontrol.db")
+    settings, migrated = migrate_openweather_key_from_settings(settings)
+    if migrated:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
     return settings
 
 
@@ -328,7 +333,7 @@ def run_weather_cycle(
         return
 
     # Prefer settings.json key (editable from UI), fallback to EnvironmentFile (.env)
-    api_key = str(settings.get("openweather_api_key") or "").strip() or os.getenv("OPENWEATHER_API_KEY", "").strip()
+    api_key = openweather_api_key_from_env()
     if not api_key:
         weather_state["status"] = "error"
         weather_state["last_error"] = "OpenWeather API key is missing"

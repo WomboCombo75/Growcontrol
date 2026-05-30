@@ -569,8 +569,13 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
         weather_enabled = bool(settings.get("weather_enabled", True))
         if weather_enabled:
-            has_key = bool(os.getenv("OPENWEATHER_API_KEY", "").strip())
-            ok_all &= run_check("weather API key", has_key, "OPENWEATHER_API_KEY set")
+            try:
+                from growcontrol_env import openweather_api_key_configured
+
+                has_key = openweather_api_key_configured()
+            except Exception:  # noqa: BLE001
+                has_key = bool(os.getenv("OPENWEATHER_API_KEY", "").strip())
+            ok_all &= run_check("weather API key", has_key, "OPENWEATHER_API_KEY in .env")
         else:
             run_check("weather", True, "disabled in settings")
 
