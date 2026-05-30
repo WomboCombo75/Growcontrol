@@ -34,6 +34,23 @@ need_cmd() {
   return 0
 }
 
+prompt_yes_no() {
+  local question="$1"
+  local default_answer="${2:-N}"
+  local prompt="[y/N]"
+  [[ "$default_answer" =~ ^[Yy]$ ]] && prompt="[Y/n]"
+  local reply=""
+  while true; do
+    read -r -p "$question $prompt " reply || true
+    reply="${reply:-$default_answer}"
+    case "$reply" in
+      [Yy]|[Yy][Ee][Ss]) return 0 ;;
+      [Nn]|[Nn][Oo]) return 1 ;;
+      *) echo "Please answer yes or no." ;;
+    esac
+  done
+}
+
 ensure_git_curl() {
   if need_cmd git && need_cmd curl; then
     return 0
@@ -61,6 +78,13 @@ fi
 log "Growcontrol installer"
 log "Repository: $GROWCONTROL_REPO (branch: $GROWCONTROL_BRANCH)"
 log "Install directory: $GROWCONTROL_DIR"
+
+if [[ "$GROWCONTROL_SKIP_SYSTEM" != "1" ]] && [[ -t 0 ]]; then
+  if prompt_yes_no "Are you installing in WSL?" "N"; then
+    GROWCONTROL_SKIP_SYSTEM="1"
+    log "WSL mode enabled: will clone/update project and skip system service install."
+  fi
+fi
 
 ensure_git_curl
 
