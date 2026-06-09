@@ -102,7 +102,7 @@ fi
 if [[ -d "$GROWCONTROL_DIR/.git" ]]; then
   log "Updating existing clone in $GROWCONTROL_DIR …"
   git -C "$GROWCONTROL_DIR" fetch --depth 1 origin "$GROWCONTROL_BRANCH"
-  git -C "$GROWCONTROL_DIR" reset --hard "origin/$GROWCONTROL_BRANCH"
+  git -C "$GROWCONTROL_DIR" reset --hard FETCH_HEAD
   ok "Repository updated."
 else
   log "Cloning into $GROWCONTROL_DIR …"
